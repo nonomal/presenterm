@@ -63,6 +63,21 @@ this is a slide
 this is another slide
 ```
 
+## h1_slide_titles
+
+This options allows setting whether the first `h1` heading in a slide will automatically become the slide title:
+
+```
+---
+options:
+    h1_slide_titles: true
+---
+
+# title
+
+# not the first, so no title
+```
+
 ## command_prefix
 
 Because _presenterm_ uses HTML comments to represent commands, it is necessary to make some assumptions on _what_ is a 

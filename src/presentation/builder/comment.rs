@@ -6,6 +6,7 @@ use crate::{
 };
 use serde::Deserialize;
 use std::{fmt, num::NonZeroU8, path::PathBuf, str::FromStr};
+use strum::{EnumDiscriminants, EnumIter};
 
 impl PresentationBuilder<'_, '_> {
     pub(crate) fn process_comment(&mut self, comment: String, source_position: SourcePosition) -> BuildResult {
@@ -16,6 +17,8 @@ impl PresentationBuilder<'_, '_> {
             Err(error) => {
                 // If we failed to parse this, make sure we shouldn't have ignored it
                 if self.should_ignore_comment(comment) {
+                    // Ignored comments should not add line breaks
+                    self.slide_state.ignore_element_line_break = true;
                     return Ok(());
                 }
                 return Err(self.invalid_presentation(source_position, error));
@@ -42,6 +45,7 @@ impl PresentationBuilder<'_, '_> {
             CommentCommand::NewLines(count) => {
                 self.push_line_breaks(count as usize * self.slide_font_size() as usize);
             }
+            CommentCommand::Comment(_) => {}
             CommentCommand::JumpToMiddle => self.chunk_operations.push(RenderOperation::JumpToVerticalCenter),
             CommentCommand::InitColumnLayout(columns) => {
                 self.validate_column_layout(&columns, source_position)?;
@@ -53,12 +57,16 @@ impl PresentationBuilder<'_, '_> {
                 } else {
                     LayoutGrid::None
                 };
-                self.chunk_operations.push(RenderOperation::InitColumnLayout { columns, grid });
+                self.chunk_operations.push(RenderOperation::InitColumnLayout {
+                    columns,
+                    grid,
+                    margin: self.theme.column_layout.margin,
+                });
                 self.slide_state.needs_enter_column = true;
             }
             CommentCommand::ResetLayout => {
                 self.slide_state.layout = LayoutState::Default;
-                self.chunk_operations.extend([RenderOperation::ExitLayout, RenderOperation::RenderLineBreak]);
+                self.chunk_operations.push(RenderOperation::ExitLayout);
             }
             CommentCommand::Column(column) => {
                 let (current_column, columns_count) = match self.slide_state.layout {
@@ -78,6 +86,9 @@ impl PresentationBuilder<'_, '_> {
             }
             CommentCommand::IncrementalLists(value) => {
                 self.slide_state.incremental_lists = Some(value);
+            }
+            CommentCommand::IncrementalTables(value) => {
+                self.slide_state.incremental_tables = Some(value);
             }
             CommentCommand::NoFooter => {
                 self.slide_state.ignore_footer = true;
@@ -110,10 +121,13 @@ impl PresentationBuilder<'_, '_> {
                 return Ok(());
             }
             CommentCommand::SnippetOutput(id) => {
-                let handle = self.executable_snippets.get(&id).cloned().ok_or_else(|| {
-                    self.invalid_presentation(source_position, InvalidPresentation::UndefinedSnippetId(id))
-                })?;
-                self.push_detached_code_execution(handle)?;
+                // Ignore this if execution is disabled
+                if self.options.enable_snippet_execution {
+                    let handle = self.executable_snippets.get(&id).cloned().ok_or_else(|| {
+                        self.invalid_presentation(source_position, InvalidPresentation::UndefinedSnippetId(id))
+                    })?;
+                    self.push_detached_code_execution(handle)?;
+                }
                 return Ok(());
             }
         };
@@ -149,7 +163,7 @@ impl PresentationBuilder<'_, '_> {
         } else {
             // Ignore vim-like code folding tags
             let comment = comment.trim();
-            comment == "{{{" || comment == "}}}"
+            comment == "{{{" || comment == "}}}" || comment.starts_with("//")
         }
     }
 
@@ -176,13 +190,19 @@ impl PresentationBuilder<'_, '_> {
             if let MarkdownElement::FrontMatter(_) = element {
                 return Err(self.invalid_presentation(source_position, InvalidPresentation::IncludeFrontMatter));
             }
+            self.slide_state.ignore_element_line_break = false;
             self.process_element_for_presentation_mode(element)?;
+            if !self.slide_state.ignore_element_line_break {
+                self.push_line_break();
+            }
         }
+        self.slide_state.ignore_element_line_break = true;
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CommentCommand {
     Alignment(CommentCommandAlignment),
@@ -191,6 +211,7 @@ pub(crate) enum CommentCommand {
     FontSize(u8),
     Include(PathBuf),
     IncrementalLists(bool),
+    IncrementalTables(bool),
     #[serde(rename = "column_layout")]
     InitColumnLayout(Vec<u8>),
     JumpToMiddle,
@@ -205,33 +226,46 @@ pub(crate) enum CommentCommand {
     SkipSlide,
     SpeakerNote(String),
     SnippetOutput(String),
+    Comment(String),
 }
 
 impl CommentCommand {
     /// Generate sample comment strings for all available commands
-    pub(crate) fn generate_samples() -> Vec<String> {
-        vec![
-            format!("<!-- pause -->"),
-            format!("<!-- end_slide -->"),
-            format!("<!-- new_line -->"),
-            format!("<!-- new_lines: 2 -->"),
-            format!("<!-- jump_to_middle -->"),
-            format!("<!-- column_layout: [1, 2] -->"),
-            format!("<!-- column: 0 -->"),
-            format!("<!-- reset_layout -->"),
-            format!("<!-- incremental_lists: true -->"),
-            format!("<!-- incremental_lists: false -->"),
-            format!("<!-- no_footer -->"),
-            format!("<!-- font_size: 2 -->"),
-            format!("<!-- alignment: left -->"),
-            format!("<!-- alignment: center -->"),
-            format!("<!-- alignment: right -->"),
-            format!("<!-- skip_slide -->"),
-            format!("<!-- list_item_newlines: 2 -->"),
-            format!("<!-- include: file.md -->"),
-            format!("<!-- speaker_note: Your note here -->"),
-            format!("<!-- snippet_output: identifier -->"),
-        ]
+    pub(crate) fn generate_samples() -> Vec<&'static str> {
+        use strum::IntoEnumIterator;
+
+        CommentCommandDiscriminants::iter()
+            .flat_map(|variant| {
+                use CommentCommandDiscriminants::*;
+                match variant {
+                    Alignment => {
+                        vec!["<!-- alignment: left -->", "<!-- alignment: center -->", "<!-- alignment: right -->"]
+                    }
+                    Column => vec!["<!-- column: 0 -->"],
+                    EndSlide => vec!["<!-- end_slide -->"],
+                    FontSize => vec!["<!-- font_size: 2 -->"],
+                    Include => vec!["<!-- include: file.md -->"],
+                    IncrementalLists => {
+                        vec!["<!-- incremental_lists: true -->", "<!-- incremental_lists: false -->"]
+                    }
+                    IncrementalTables => {
+                        vec!["<!-- incremental_tables: true -->", "<!-- incremental_tables: false -->"]
+                    }
+                    InitColumnLayout => vec!["<!-- column_layout: [1, 2] -->"],
+                    JumpToMiddle => vec!["<!-- jump_to_middle -->"],
+                    ListItemNewlines => vec!["<!-- list_item_newlines: 2 -->"],
+                    NewLine => vec!["<!-- new_line -->"],
+                    NewLines => vec!["<!-- new_lines: 2 -->"],
+                    NoFooter => vec!["<!-- no_footer -->"],
+                    Pause => vec!["<!-- pause -->"],
+                    ResetLayout => vec!["<!-- reset_layout -->"],
+                    SkipSlide => vec!["<!-- skip_slide -->"],
+                    SpeakerNote => vec!["<!-- speaker_note: Your note here -->"],
+                    SnippetOutput => vec!["<!-- snippet_output: identifier -->"],
+                    Comment => vec!["<!-- comment: hi mom -->"],
+                }
+            })
+            .collect()
     }
 }
 
@@ -270,12 +304,11 @@ impl fmt::Display for CommandParseError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::BufWriter};
-
     use super::*;
     use crate::presentation::builder::{PresentationBuilderOptions, utils::Test};
     use image::{DynamicImage, ImageEncoder, codecs::png::PngEncoder};
     use rstest::rstest;
+    use std::{fs, io::BufWriter};
     use tempfile::tempdir;
 
     #[rstest]
@@ -290,6 +323,7 @@ mod tests {
     #[case::incremental_lists("newlines: 2", CommentCommand::NewLines(2))]
     #[case::incremental_lists("new_line", CommentCommand::NewLine)]
     #[case::incremental_lists("newline", CommentCommand::NewLine)]
+    #[case::comment("comment: This is a user comment", CommentCommand::Comment("This is a user comment".into()))]
     fn command_formatting(#[case] input: &str, #[case] expected: CommentCommand) {
         let parsed: CommentCommand = input.parse().expect("deserialization failed");
         assert_eq!(parsed, expected);
@@ -301,6 +335,9 @@ mod tests {
     #[case::many_close_braces("}}}")]
     #[case::vim_command("vim: hi")]
     #[case::padded_vim_command("vim: hi")]
+    #[case::double_slash("// This is a user comment")]
+    #[case::double_slash_padded("  // This is a padded comment  ")]
+    #[case::comment_colon("comment: This is a user comment")]
     fn ignore_comments(#[case] comment: &str) {
         let input = format!("<!-- {comment} -->");
         Test::new(input).build();
@@ -385,7 +422,14 @@ mod tests {
 
     #[test]
     fn columns() {
-        let input = "
+        let input = "---
+theme:
+  override:
+    column_layout:
+      margin:
+        fixed: 2
+---
+
 <!-- column_layout: [1, 1] -->
 <!-- column: 0 -->
 foo1
@@ -402,15 +446,15 @@ bar2
 
 ---
 ";
-        let lines = Test::new(input).render().rows(7).columns(24).into_lines();
+        let lines = Test::new(input).render().rows(7).columns(20).into_lines();
         let expected = &[
-            "                        ",
-            "foo1            bar1    ",
-            "                        ",
-            "foo2            bar2    ",
-            "                        ",
-            "————————        ————————",
-            "                        ",
+            "                    ",
+            "foo1        bar1    ",
+            "                    ",
+            "foo2        bar2    ",
+            "                    ",
+            "————————    ————————",
+            "                    ",
         ];
         assert_eq!(lines, expected);
     }
@@ -418,7 +462,14 @@ bar2
     #[test]
     fn columns_back_and_forth() {
         // this is the same as the above but we run back and forth between the columns
-        let input = "
+        let input = "---
+theme:
+  override:
+    column_layout:
+      margin:
+        fixed: 2
+---
+
 <!-- column_layout: [1, 1] -->
 
 <!-- column: 0 -->
@@ -441,22 +492,29 @@ bar2
 
 ---
 ";
-        let lines = Test::new(input).render().rows(7).columns(24).into_lines();
+        let lines = Test::new(input).render().rows(7).columns(20).into_lines();
         let expected = &[
-            "                        ",
-            "foo1            bar1    ",
-            "                        ",
-            "foo2            bar2    ",
-            "                        ",
-            "————————        ————————",
-            "                        ",
+            "                    ",
+            "foo1        bar1    ",
+            "                    ",
+            "foo2        bar2    ",
+            "                    ",
+            "————————    ————————",
+            "                    ",
         ];
         assert_eq!(lines, expected);
     }
 
     #[test]
     fn uneven_columns() {
-        let input = "
+        let input = "---
+theme:
+  override:
+    column_layout:
+      margin:
+        fixed: 4
+---
+
 <!-- column_layout: [2, 1] -->
 <!-- column: 0 -->
 foo1
@@ -488,7 +546,14 @@ bar2
 
     #[test]
     fn uneven_three_columns() {
-        let input = "
+        let input = "---
+theme:
+  override:
+    column_layout:
+      margin:
+        fixed: 4
+---
+
 <!-- column_layout: [1, 2, 1] -->
 <!-- column: 0 -->
 
@@ -543,7 +608,14 @@ bye
 
     #[test]
     fn pause_layout_new_slide() {
-        let input = r"
+        let input = r"---
+theme:
+  override:
+    column_layout:
+      margin:
+        fixed: 4
+---
+
 <!-- column_layout: [1, 1] -->
 <!-- column: 0 -->
 hi
@@ -689,6 +761,8 @@ hola
 first
 ===
 
+foo
+
 ![](inner/img.png)
 
 <!-- include: inner/second.md -->
@@ -704,8 +778,10 @@ language: text
         fs::write(
             inner_path.join("second.md"),
             r"
+<!-- column_layout: [1] -->
+<!-- column: 0 -->
 second
-===
+<!-- reset_layout -->
 
 ![](img.png)
 ",
@@ -720,15 +796,19 @@ hi
 <!-- include: first.md -->
         ";
 
-        let lines = Test::new(input).resources_path(path).render().rows(10).columns(12).into_lines();
+        let lines = Test::new(input).resources_path(path).render().rows(14).columns(12).into_lines();
         let expected = &[
             "            ",
             "hi          ",
             "            ",
             "first       ",
             "            ",
+            "foo         ",
+            "            ",
+            "            ",
             "            ",
             "second      ",
+            "            ",
             "            ",
             "            ",
             "a           ",

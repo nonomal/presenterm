@@ -5,9 +5,10 @@ use crate::{
     },
     presentation::builder::{BuildResult, LastElement, PresentationBuilder},
     render::operation::{BlockLine, RenderOperation},
+    theme::ElementType,
 };
 
-impl<'a, 'b> PresentationBuilder<'a, 'b> {
+impl PresentationBuilder<'_, '_> {
     pub(crate) fn push_list(&mut self, list: Vec<ListItem>) -> BuildResult {
         let last_chunk_operation = self.slide_chunks.last().and_then(|chunk| chunk.iter_operations().last());
         // If the last chunk ended in a list, pop the newline so we get them all next to each
@@ -27,18 +28,18 @@ impl<'a, 'b> PresentationBuilder<'a, 'b> {
         let block_length =
             list.iter().map(|l| self.list_item_prefix(l).width() + l.contents.width()).max().unwrap_or_default() as u16;
         let block_length = block_length * self.slide_font_size() as u16;
-        let incremental_lists = self.slide_state.incremental_lists.unwrap_or(self.options.incremental_lists);
+        let incremental = self.slide_state.incremental_lists.unwrap_or(self.options.incremental_lists);
         let iter = ListIterator::new(list, start_index);
-        if incremental_lists && self.options.pause_before_incremental_lists {
+        if incremental && self.options.pause_before_incremental_lists {
             self.push_pause();
         }
         for (index, item) in iter.enumerate() {
-            if index > 0 && incremental_lists {
+            if index > 0 && incremental {
                 self.push_pause();
             }
             self.push_list_item(item.index, item.item, block_length)?;
         }
-        if incremental_lists && self.options.pause_after_incremental_lists {
+        if incremental && self.options.pause_after_incremental_lists {
             self.push_pause();
         }
         Ok(())
@@ -52,7 +53,7 @@ impl<'a, 'b> PresentationBuilder<'a, 'b> {
             self.apply_theme_text_style(piece);
             piece.style = piece.style.size(font_size);
         }
-        let alignment = self.slide_state.alignment.unwrap_or_default();
+        let alignment = self.slide_state.alignment.unwrap_or(self.theme.alignment(&ElementType::List));
         self.chunk_operations.push(RenderOperation::RenderBlockLine(BlockLine {
             prefix: prefix.into(),
             right_padding_length: 0,

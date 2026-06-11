@@ -78,7 +78,15 @@
           "description": "The configuration for lists when incremental lists are enabled.",
           "allOf": [
             {
-              "$ref": "#/definitions/IncrementalListsConfig"
+              "$ref": "#/definitions/IncrementalElementConfig"
+            }
+          ]
+        },
+        "incremental_tables": {
+          "description": "The configuration for tables when incremental tables are enabled.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/IncrementalElementConfig"
             }
           ]
         },
@@ -121,9 +129,10 @@
         },
         "theme": {
           "description": "The theme to use by default in every presentation unless overridden.",
-          "type": [
-            "string",
-            "null"
+          "allOf": [
+            {
+              "$ref": "#/definitions/ThemeConfig"
+            }
           ]
         },
         "validate_overflows": {
@@ -275,7 +284,7 @@
           ]
         },
         {
-          "description": "Use the sixel protocol. Note that this requires compiling presenterm using the --features sixel flag.",
+          "description": "Use the sixel protocol.",
           "type": "string",
           "enum": [
             "sixel"
@@ -290,12 +299,12 @@
         }
       ]
     },
-    "IncrementalListsConfig": {
-      "description": "The configuration for lists when incremental lists are enabled.",
+    "IncrementalElementConfig": {
+      "description": "The configuration for incrementally shown elements.",
       "type": "object",
       "properties": {
         "pause_after": {
-          "description": "Whether to pause after a list ends.",
+          "description": "Whether to pause after.",
           "default": null,
           "type": [
             "boolean",
@@ -303,7 +312,7 @@
           ]
         },
         "pause_before": {
-          "description": "Whether to pause before a list begins.",
+          "description": "Whether to pause before.",
           "default": null,
           "type": [
             "boolean",
@@ -535,6 +544,25 @@
     "MermaidConfig": {
       "type": "object",
       "properties": {
+        "cli": {
+          "description": "The application to use to generate diagrams.",
+          "default": "mmdc",
+          "type": "string"
+        },
+        "config_path": {
+          "description": "A path to a mermaid JSON configuration file to be used by the `mmdc` tool.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "puppeteer_config_path": {
+          "description": "A path to a puppeteer JSON configuration file to be used by the `mmdc` tool.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "scale": {
           "description": "The scaling parameter to be used in the mermaid CLI.",
           "default": 2,
@@ -592,6 +620,13 @@
         },
         "incremental_lists": {
           "description": "Show all lists incrementally, by implicitly adding pauses in between elements.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "incremental_tables": {
+          "description": "Show all tables incrementally, by implicitly adding pauses in between rows.",
           "type": [
             "boolean",
             "null"
@@ -852,6 +887,7 @@
             "Clojure",
             "Cpp",
             "Css",
+            "Dart",
             "D2",
             "DLang",
             "Diff",
@@ -863,6 +899,7 @@
             "File",
             "Fish",
             "FSharp",
+            "GdScript",
             "Go",
             "GraphQL",
             "Haskell",
@@ -883,6 +920,7 @@
             "OCaml",
             "Perl",
             "Php",
+            "PowerShell",
             "Protobuf",
             "Puppet",
             "Python",
@@ -900,11 +938,13 @@
             "Terraform",
             "Toml",
             "TypeScript",
+            "TypeScriptReact",
             "Typst",
             "Xml",
             "Yaml",
             "Verilog",
             "Vue",
+            "Wsl",
             "Zig",
             "Zsh"
           ]
@@ -975,6 +1015,45 @@
         }
       },
       "additionalProperties": false
+    },
+    "ThemeConfig": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "description": "Theme of the presentation.",
+          "type": "string"
+        },
+        {
+          "description": "Automatic dark/light theme switch based on the terminal background luminance.",
+          "type": "object",
+          "required": [
+            "dark",
+            "light"
+          ],
+          "properties": {
+            "dark": {
+              "description": "Dark theme of the presentation.",
+              "type": "string"
+            },
+            "light": {
+              "description": "Light theme of the presentation.",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Light/Dark detection timeout in ms.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 1.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "TypstConfig": {
       "type": "object",

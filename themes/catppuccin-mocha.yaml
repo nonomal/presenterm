@@ -6,6 +6,10 @@ default:
     foreground: palette:text
     background: palette:base
 
+column_layout:
+  margin:
+    fixed: 4
+
 slide_title:
   alignment: center
   padding_bottom: 1
@@ -41,6 +45,15 @@ execution_output:
   padding:
     horizontal: 2
     vertical: 1
+
+pty_output:
+  colors:
+    foreground: palette:text
+    background: palette:surface0
+  cursor:
+    highlight_colors:
+      foreground: palette:surface0
+      background: palette:text
 
 inline_code:
   colors:

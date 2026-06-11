@@ -46,7 +46,7 @@ Visit the [documentation][docs-introduction] to get started.
 * [_LaTeX_ and _typst_ formula rendering][docs-latex].
 * [Introduction slide][docs-intro-slide] that displays the presentation title and your name.
 * [Slide titles][docs-slide-titles].
-* [Snippet execution][docs-code-execute] for various programming languages.
+* [Snippet execution][docs-code-execute] for various programming languages, including execution inside pseudo terminals.
 * [Export presentations to PDF and HTML][docs-exports].
 * [Slide transitions][docs-slide-transitions].
 * [Pause][docs-pauses] portions of your slides.
@@ -60,10 +60,14 @@ See the [introduction page][docs-introduction] to learn more.
 
 Here are some talks and demos that feature _presenterm_:
 
+- [If it can compute, it can run Ratatui][it-can-run-ratatui] by [Orhun Parmaksız][orhun-github]
+- [Building Embedded TUIs with Rust & Ratatui][building-embedded-tuis] by [Orhun Parmaksız][orhun-github]
 - [Bringing Terminal Aesthetics to the Web With Rust][bringing-terminal-aesthetics] by [Orhun Parmaksız][orhun-github]
 - [7 Rust Terminal Tools That You Should Use][rust-terminal-tools] by [Orhun Parmaksız][orhun-github]
 - [Renaissance of Terminal User Interfaces with Rust][renaissance-tui] by [Orhun Parmaksız][orhun-github]
 - [Using Nix on Apple Silicon and declarative development environments][NiXOS-and-Dev] by [pwnwriter][pwnwriter-github]
+- [Hayasen: A Robust Embedded Rust Library which supports multiple sensors][hayasen] by [Vaishnav-Sabari-Girish][vaishnav]
+- [Using ratatui in Embedded sytems : Meet Mousefood][mousefood] by [Vaishnav-Sabari-Girish][vaishnav]
 
 Gave a talk using _presenterm_? We would love to feature it here! Open a PR or issue to get it added.
 
@@ -94,8 +98,13 @@ Gave a talk using _presenterm_? We would love to feature it here! Open a PR or i
 [bat]: https://github.com/sharkdp/bat
 [syntect]: https://github.com/trishume/syntect
 [bringing-terminal-aesthetics]: https://www.youtube.com/watch?v=iepbyYrF_YQ
+[building-embedded-tuis]: https://www.youtube.com/watch?v=F04kQMKwrwQ
+[it-can-run-ratatui]: https://www.youtube.com/watch?v=btqNDDuZ3cI
 [rust-terminal-tools]: https://www.youtube.com/watch?v=ATiKwUiqnAU
 [renaissance-tui]: https://www.youtube.com/watch?v=hWG51Mc1DlM
 [orhun-github]: https://github.com/orhun
 [NiXOS-and-Dev]: https://github.com/pwnwriter/PTN11
 [pwnwriter-github]: https://github.com/pwnwriter
+[hayasen]: https://github.com/Vaishnav-Sabari-Girish/rust_bangalore_oct_2025
+[vaishnav]: https://github.com/Vaishnav-Sabari-Girish
+[mousefood]: https://github.com/Vaishnav-Sabari-Girish/rust_bangalore_december_2025/

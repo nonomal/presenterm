@@ -3,7 +3,6 @@ use crate::{
     theme::{ColorPalette, raw::RawColor},
 };
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
-use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -312,6 +311,38 @@ impl Color {
         Self::Rgb { r, g, b }
     }
 
+    pub(crate) fn from_8bit(color: u8) -> Option<Self> {
+        match color {
+            0 => Self::Black.into(),
+            1 => Self::DarkRed.into(),
+            2 => Self::DarkGreen.into(),
+            3 => Self::DarkYellow.into(),
+            4 => Self::DarkBlue.into(),
+            5 => Self::DarkMagenta.into(),
+            6 => Self::DarkCyan.into(),
+            7 => Self::Grey.into(),
+            8 => Self::DarkGrey.into(),
+            9 => Self::Red.into(),
+            10 => Self::Green.into(),
+            11 => Self::Yellow.into(),
+            12 => Self::Blue.into(),
+            13 => Self::Magenta.into(),
+            14 => Self::Cyan.into(),
+            15 => Self::White.into(),
+            16..=231 => {
+                let mapping = [0, 95, 95 + 40, 95 + 80, 95 + 120, 95 + 160];
+                let mut value = color - 16;
+                let b = (value % 6) as usize;
+                value /= 6;
+                let g = (value % 6) as usize;
+                value /= 6;
+                let r = (value % 6) as usize;
+                Some(Self::new(mapping[r], mapping[g], mapping[b]))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn as_rgb(&self) -> Option<(u8, u8, u8)> {
         match self {
             Self::Rgb { r, g, b } => Some((*r, *g, *b)),
@@ -398,12 +429,6 @@ impl From<Colors> for crossterm::style::Colors {
         let background = value.background.map(Color::into);
         Self { foreground, background }
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub(crate) enum ParseColorError {
-    #[error("invalid hex color: {0}")]
-    Hex(#[from] FromHexError),
 }
 
 trait TryIntoSuperscript {

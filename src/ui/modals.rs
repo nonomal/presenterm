@@ -57,7 +57,7 @@ impl IndexBuilder {
             selection_style,
             background: self.background,
         };
-        vec![RenderOperation::RenderDynamic(Rc::new(drawer))]
+        vec![RenderOperation::RenderDynamicTopLevel(Rc::new(drawer))]
     }
 }
 
@@ -319,6 +319,6 @@ impl AsRenderOperations for CenterModalContent {
 
 impl From<CenterModalContent> for RenderOperation {
     fn from(op: CenterModalContent) -> Self {
-        Self::RenderDynamic(Rc::new(op))
+        Self::RenderDynamicTopLevel(Rc::new(op))
     }
 }

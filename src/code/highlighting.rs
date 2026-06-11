@@ -93,11 +93,11 @@ pub(crate) struct SnippetHighlighter {
 
 impl SnippetHighlighter {
     /// Create a highlighter for a specific language.
-    pub(crate) fn language_highlighter(&self, language: &SnippetLanguage) -> LanguageHighlighter {
+    pub(crate) fn language_highlighter(&self, language: &SnippetLanguage) -> LanguageHighlighter<'_> {
         let extension = Self::language_extension(language);
         let syntax = SYNTAX_SET.find_syntax_by_extension(extension).unwrap();
         let highlighter = HighlightLines::new(syntax, &self.theme);
-        LanguageHighlighter { highlighter }
+        LanguageHighlighter::new(language.clone(), highlighter)
     }
 
     fn language_extension(language: &SnippetLanguage) -> &'static str {
@@ -107,7 +107,7 @@ impl SnippetHighlighter {
             Asp => "asa",
             Awk => "awk",
             Bash => "sh",
-            BatchFile => "bat",
+            BatchFile => "cmd",
             C => "c",
             CMake => "cmake",
             CSharp => "cs",
@@ -115,6 +115,7 @@ impl SnippetHighlighter {
             Cpp => "cpp",
             Crontab => "crontab",
             Css => "css",
+            Dart => "dart",
             D2 => "txt",
             DLang => "d",
             Diff => "diff",
@@ -126,6 +127,7 @@ impl SnippetHighlighter {
             File => "txt",
             Fish => "fish",
             FSharp => "fsx",
+            GdScript => "gd",
             Go => "go",
             GraphQL => "graphql",
             Haskell => "hs",
@@ -146,6 +148,7 @@ impl SnippetHighlighter {
             OCaml => "ml",
             Perl => "pl",
             Php => "php",
+            PowerShell => "ps1",
             Protobuf => "proto",
             Puppet => "pp",
             Python => "py",
@@ -163,11 +166,13 @@ impl SnippetHighlighter {
             Terraform => "tf",
             Toml => "toml",
             TypeScript => "ts",
+            TypeScriptReact => "tsx",
             Typst => "txt",
             // default to plain text so we get the same look&feel
             Unknown(_) => "txt",
             Verilog => "v",
             Vue => "vue",
+            Wsl => "sh",
             Xml => "xml",
             Yaml => "yaml",
             Zsh => "sh",
@@ -184,15 +189,28 @@ impl Default for SnippetHighlighter {
 }
 
 pub(crate) struct LanguageHighlighter<'a> {
+    language: SnippetLanguage,
     highlighter: HighlightLines<'a>,
+    parse_started: bool,
 }
 
-impl LanguageHighlighter<'_> {
-    pub(crate) fn highlight_line(&mut self, line: &str, block_style: &CodeBlockStyle) -> Line {
-        self.style_line(line, block_style)
+impl<'a> LanguageHighlighter<'a> {
+    fn new(language: SnippetLanguage, highlighter: HighlightLines<'a>) -> Self {
+        Self { language, highlighter, parse_started: false }
     }
 
     pub(crate) fn style_line(&mut self, line: &str, block_style: &CodeBlockStyle) -> Line {
+        if !self.parse_started {
+            let line = line.trim();
+            if !line.is_empty() {
+                self.parse_started = true;
+                // Parse a fake "<?php" line if PHP code doesn't start with one so highlighting
+                // looks good.
+                if matches!(self.language, SnippetLanguage::Php) && !line.starts_with("<?php") {
+                    self.highlighter.highlight_line("<?php\n", &SYNTAX_SET).unwrap();
+                }
+            }
+        }
         let texts: Vec<_> = self
             .highlighter
             .highlight_line(line, &SYNTAX_SET)
@@ -225,11 +243,6 @@ impl<'a> StyledTokens<'a> {
         Text::new(text, self.style)
     }
 }
-
-/// A theme could not be found.
-#[derive(Debug, thiserror::Error)]
-#[error("theme not found")]
-pub struct ThemeNotFound;
 
 // This code has been adapted from bat's: https://github.com/sharkdp/bat
 fn parse_color(color: syntect::highlighting::Color) -> Option<Color> {

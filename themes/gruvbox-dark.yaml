@@ -6,6 +6,10 @@ default:
     foreground: "ebdbb2"
     background: "282828"
 
+column_layout:
+  margin:
+    fixed: 4
+
 slide_title:
   alignment: center
   padding_bottom: 1
@@ -41,6 +45,15 @@ execution_output:
   padding:
     horizontal: 2
     vertical: 1
+
+pty_output:
+  colors:
+    foreground: "ebdbb2"
+    background: "3c3836"
+  cursor:
+    highlight_colors:
+      foreground: "3c3836"
+      background: "ebdbb2"
 
 inline_code:
   colors:

@@ -12,7 +12,10 @@ use crate::{
     terminal::{
         GraphicsMode,
         emulator::TerminalEmulator,
-        image::protocols::iterm::ItermMode,
+        image::protocols::{
+            iterm::ItermMode,
+            sixel::{SixelImage, SixelPrinter},
+        },
         printer::{TerminalError, TerminalIo},
     },
 };
@@ -58,8 +61,19 @@ pub(crate) enum TerminalImage {
     Iterm(ItermImage),
     Ascii(AsciiImage),
     Raw(RawImage),
-    #[cfg(feature = "sixel")]
-    Sixel(super::protocols::sixel::SixelImage),
+    Sixel(SixelImage),
+}
+
+impl fmt::Debug for TerminalImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Kitty(_) => f.debug_tuple("Kitty").finish(),
+            Self::Iterm(_) => f.debug_tuple("Iterm").finish(),
+            Self::Ascii(_) => f.debug_tuple("Ascii").finish(),
+            Self::Raw(_) => f.debug_tuple("Raw").finish(),
+            Self::Sixel(_) => f.debug_tuple("Sixel").finish(),
+        }
+    }
 }
 
 impl ImageProperties for TerminalImage {
@@ -69,7 +83,6 @@ impl ImageProperties for TerminalImage {
             Self::Iterm(image) => image.dimensions(),
             Self::Ascii(image) => image.dimensions(),
             Self::Raw(image) => image.dimensions(),
-            #[cfg(feature = "sixel")]
             Self::Sixel(image) => image.dimensions(),
         }
     }
@@ -81,8 +94,7 @@ pub enum ImagePrinter {
     Ascii(AsciiPrinter),
     Raw(RawPrinter),
     Null,
-    #[cfg(feature = "sixel")]
-    Sixel(super::protocols::sixel::SixelPrinter),
+    Sixel(SixelPrinter),
 }
 
 impl Default for ImagePrinter {
@@ -100,8 +112,7 @@ impl ImagePrinter {
             GraphicsMode::Iterm2Multipart => Self::Iterm(ItermPrinter::new(ItermMode::Multipart, capabilities.tmux)),
             GraphicsMode::AsciiBlocks => Self::Ascii(AsciiPrinter),
             GraphicsMode::Raw => Self::Raw(RawPrinter),
-            #[cfg(feature = "sixel")]
-            GraphicsMode::Sixel => Self::Sixel(super::protocols::sixel::SixelPrinter::new()?),
+            GraphicsMode::Sixel => Self::Sixel(SixelPrinter::new()?),
         };
         Ok(printer)
     }
@@ -117,7 +128,6 @@ impl PrintImage for ImagePrinter {
             Self::Ascii(printer) => TerminalImage::Ascii(printer.register(spec)?),
             Self::Null => return Err(RegisterImageError::Unsupported),
             Self::Raw(printer) => TerminalImage::Raw(printer.register(spec)?),
-            #[cfg(feature = "sixel")]
             Self::Sixel(printer) => TerminalImage::Sixel(printer.register(spec)?),
         };
         Ok(image)
@@ -133,7 +143,6 @@ impl PrintImage for ImagePrinter {
             (Self::Ascii(printer), TerminalImage::Ascii(image)) => printer.print(image, options, terminal),
             (Self::Null, _) => Ok(()),
             (Self::Raw(printer), TerminalImage::Raw(image)) => printer.print(image, options, terminal),
-            #[cfg(feature = "sixel")]
             (Self::Sixel(printer), TerminalImage::Sixel(image)) => printer.print(image, options, terminal),
             _ => Err(PrintImageError::Unsupported),
         }
@@ -160,7 +169,6 @@ impl fmt::Debug for ImageRegistry {
             ImagePrinter::Ascii(_) => "Ascii",
             ImagePrinter::Null => "Null",
             ImagePrinter::Raw(_) => "Raw",
-            #[cfg(feature = "sixel")]
             ImagePrinter::Sixel(_) => "Sixel",
         };
         write!(f, "ImageRegistry<{inner}>")

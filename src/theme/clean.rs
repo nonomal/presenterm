@@ -18,6 +18,7 @@ const DEFAULT_TYPST_VERTICAL_MARGIN: u16 = 7;
 const DEFAULT_MERMAID_THEME: &str = "default";
 const DEFAULT_MERMAID_BACKGROUND: &str = "transparent";
 const DEFAULT_D2_THEME: u32 = 0;
+const DEFAULT_PTY_CURSOR_SYMBOL: char = '█';
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ThemeOptions {
@@ -35,13 +36,15 @@ pub(crate) struct PresentationTheme {
     pub(crate) slide_title: SlideTitleStyle,
     pub(crate) code: CodeBlockStyle,
     pub(crate) execution_output: ExecutionOutputBlockStyle,
+    pub(crate) pty_output: PtyOutputBlockStyle,
     pub(crate) inline_code: ModifierStyle,
     pub(crate) bold: ModifierStyle,
     pub(crate) italics: ModifierStyle,
-    pub(crate) table: Alignment,
+    pub(crate) table: Option<Alignment>,
     pub(crate) block_quote: BlockQuoteStyle,
     pub(crate) alert: AlertStyle,
     pub(crate) default_style: DefaultStyle,
+    pub(crate) column_layout: ColumnLayoutStyle,
     pub(crate) headings: HeadingStyles,
     pub(crate) intro_slide: IntroSlideStyle,
     pub(crate) footer: FooterStyle,
@@ -63,6 +66,7 @@ impl PresentationTheme {
             slide_title,
             code,
             execution_output,
+            pty_output,
             inline_code,
             bold,
             italics,
@@ -70,6 +74,7 @@ impl PresentationTheme {
             block_quote,
             alert,
             default_style,
+            column_layout,
             headings,
             intro_slide,
             footer,
@@ -88,13 +93,15 @@ impl PresentationTheme {
             slide_title: SlideTitleStyle::new(slide_title, &palette, options)?,
             code: CodeBlockStyle::new(code),
             execution_output: ExecutionOutputBlockStyle::new(execution_output, &palette)?,
+            pty_output: PtyOutputBlockStyle::new(pty_output, &palette)?,
             inline_code: ModifierStyle::new(inline_code, &palette)?,
             bold: ModifierStyle::new(bold, &palette)?,
             italics: ModifierStyle::new(italics, &palette)?,
-            table: table.clone().unwrap_or_default().into(),
+            table: table.clone().map(Into::into),
             block_quote: BlockQuoteStyle::new(block_quote, &palette)?,
             alert: AlertStyle::new(alert, &palette)?,
             default_style: default_style.clone(),
+            column_layout: ColumnLayoutStyle::new(column_layout),
             headings: HeadingStyles::new(headings, &palette, options)?,
             intro_slide: IntroSlideStyle::new(intro_slide, &palette, options)?,
             footer: FooterStyle::new(&footer.clone().unwrap_or_default(), &palette, resources)?,
@@ -110,7 +117,7 @@ impl PresentationTheme {
     pub(crate) fn alignment(&self, element: &ElementType) -> Alignment {
         use ElementType::*;
 
-        match element {
+        let alignment = match element {
             SlideTitle => self.slide_title.alignment,
             Heading1 => self.headings.h1.alignment,
             Heading2 => self.headings.h2.alignment,
@@ -118,7 +125,7 @@ impl PresentationTheme {
             Heading4 => self.headings.h4.alignment,
             Heading5 => self.headings.h5.alignment,
             Heading6 => self.headings.h6.alignment,
-            Paragraph => Default::default(),
+            Paragraph | List => Some(self.default_style.alignment),
             PresentationTitle => self.intro_slide.title.alignment,
             PresentationSubTitle => self.intro_slide.subtitle.alignment,
             PresentationEvent => self.intro_slide.event.alignment,
@@ -126,7 +133,9 @@ impl PresentationTheme {
             PresentationDate => self.intro_slide.date.alignment,
             PresentationAuthor => self.intro_slide.author.alignment,
             Table => self.table,
-        }
+            BlockQuote => self.block_quote.alignment,
+        };
+        alignment.unwrap_or(self.default_style.alignment)
     }
 }
 
@@ -144,7 +153,7 @@ pub(crate) enum ProcessingThemeError {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SlideTitleStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) separator: bool,
     pub(crate) padding_top: u8,
     pub(crate) padding_bottom: u8,
@@ -182,7 +191,7 @@ impl SlideTitleStyle {
             style = style.underlined();
         }
         Ok(Self {
-            alignment: alignment.clone().unwrap_or_default().into(),
+            alignment: alignment.clone().map(Into::into),
             separator: *separator,
             padding_top: padding_top.unwrap_or_default(),
             padding_bottom: padding_bottom.unwrap_or_default(),
@@ -222,7 +231,7 @@ impl HeadingStyles {
 
 #[derive(Clone, Debug)]
 pub(crate) struct HeadingStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) prefix: Option<String>,
     pub(crate) style: TextStyle,
 }
@@ -234,7 +243,7 @@ impl HeadingStyle {
         options: &ThemeOptions,
     ) -> Result<Self, ProcessingThemeError> {
         let raw::HeadingStyle { alignment, prefix, colors, font_size, bold, underlined, italics } = raw;
-        let alignment = alignment.clone().unwrap_or_default().into();
+        let alignment = alignment.clone().map(Into::into);
         let mut style = TextStyle::colored(colors.resolve(palette)?).size(options.adjust_font_size(*font_size));
         if bold.unwrap_or_default() {
             style = style.bold();
@@ -251,7 +260,7 @@ impl HeadingStyle {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockQuoteStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) prefix: String,
     pub(crate) base_style: TextStyle,
     pub(crate) prefix_style: TextStyle,
@@ -260,7 +269,7 @@ pub(crate) struct BlockQuoteStyle {
 impl BlockQuoteStyle {
     fn new(raw: &raw::BlockQuoteStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
         let raw::BlockQuoteStyle { alignment, prefix, colors } = raw;
-        let alignment = alignment.clone().unwrap_or_default().into();
+        let alignment = alignment.clone().map(Into::into);
         let prefix = prefix.as_deref().unwrap_or(DEFAULT_BLOCK_QUOTE_PREFIX).to_string();
         let base_style = TextStyle::colored(colors.base.resolve(palette)?);
         let mut prefix_style = TextStyle::colored(colors.base.resolve(palette)?);
@@ -402,7 +411,7 @@ impl IntroSlideStyle {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct IntroSlideLabelStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) style: TextStyle,
 }
 
@@ -410,13 +419,13 @@ impl IntroSlideLabelStyle {
     fn new(raw: &raw::BasicStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
         let raw::BasicStyle { alignment, colors } = raw;
         let style = TextStyle::colored(colors.resolve(palette)?);
-        Ok(Self { alignment: alignment.clone().unwrap_or_default().into(), style })
+        Ok(Self { alignment: alignment.clone().map(Into::into), style })
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct IntroSlideTitleStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) style: TextStyle,
 }
 
@@ -428,13 +437,13 @@ impl IntroSlideTitleStyle {
     ) -> Result<Self, ProcessingThemeError> {
         let raw::IntroSlideTitleStyle { alignment, colors, font_size } = raw;
         let style = TextStyle::colored(colors.resolve(palette)?).size(options.adjust_font_size(*font_size));
-        Ok(Self { alignment: alignment.clone().unwrap_or_default().into(), style })
+        Ok(Self { alignment: alignment.clone().map(Into::into), style })
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AuthorStyle {
-    pub(crate) alignment: Alignment,
+    pub(crate) alignment: Option<Alignment>,
     pub(crate) style: TextStyle,
     pub(crate) positioning: AuthorPositioning,
 }
@@ -443,7 +452,7 @@ impl AuthorStyle {
     fn new(raw: &raw::AuthorStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
         let raw::AuthorStyle { alignment, colors, positioning } = raw;
         let style = TextStyle::colored(colors.resolve(palette)?);
-        Ok(Self { alignment: alignment.clone().unwrap_or_default().into(), style, positioning: positioning.clone() })
+        Ok(Self { alignment: alignment.clone().map(Into::into), style, positioning: positioning.clone() })
     }
 }
 
@@ -451,14 +460,29 @@ impl AuthorStyle {
 pub(crate) struct DefaultStyle {
     pub(crate) margin: Margin,
     pub(crate) style: TextStyle,
+    pub(crate) alignment: Alignment,
 }
 
 impl DefaultStyle {
     fn new(raw: &raw::DefaultStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
-        let raw::DefaultStyle { margin, colors } = raw;
+        let raw::DefaultStyle { margin, colors, alignment } = raw;
         let margin = margin.unwrap_or_default();
         let style = TextStyle::colored(colors.resolve(palette)?);
-        Ok(Self { margin, style })
+        let alignment = alignment.clone().unwrap_or_default().into();
+        Ok(Self { margin, style, alignment })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ColumnLayoutStyle {
+    pub(crate) margin: Margin,
+}
+
+impl ColumnLayoutStyle {
+    fn new(raw: &raw::ColumnLayoutStyle) -> Self {
+        let raw::ColumnLayoutStyle { margin } = raw;
+        let margin = margin.unwrap_or_default();
+        Self { margin }
     }
 }
 
@@ -637,6 +661,70 @@ impl ExecutionStatusBlockStyle {
 }
 
 #[derive(Clone, Debug, Default)]
+pub(crate) struct PtyOutputBlockStyle {
+    pub(crate) style: TextStyle,
+    pub(crate) standby: PtyStandbyStyle,
+    pub(crate) cursor: PtyCursorStyle,
+}
+
+impl PtyOutputBlockStyle {
+    fn new(raw: &raw::PtyOutputBlockStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
+        let raw::PtyOutputBlockStyle { colors, standby, cursor } = raw;
+        let colors = colors.resolve(palette)?;
+        let style = TextStyle::colored(colors);
+        let standby = match standby {
+            Some(raw::PtyStandbyStyle::LargePlay) => PtyStandbyStyle::LargePlay,
+            None => Default::default(),
+        };
+        let cursor = PtyCursorStyle::new(cursor, palette)?;
+        Ok(Self { style, standby, cursor })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PtyCursorStyle {
+    pub(crate) symbol: String,
+    pub(crate) highlight_style: TextStyle,
+}
+
+impl PtyCursorStyle {
+    fn new(raw: &raw::PtyCursorStyle, palette: &ColorPalette) -> Result<Self, ProcessingThemeError> {
+        let raw::PtyCursorStyle { symbol, highlight_colors } = raw;
+        let symbol = symbol.unwrap_or(DEFAULT_PTY_CURSOR_SYMBOL).to_string();
+        let highlight_style = TextStyle::colored(highlight_colors.resolve(palette)?);
+        Ok(Self { symbol, highlight_style })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) enum PtyStandbyStyle {
+    #[default]
+    LargePlay,
+}
+
+impl PtyStandbyStyle {
+    pub(crate) fn as_lines(&self) -> &[&str] {
+        match self {
+            Self::LargePlay => &[
+                "⠀⠀⠀⠀⠀⠀⠀⢀⣠⣤⣤⣶⣶⣶⣶⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀",
+                "⠀⠀⠀⠀⢀⣤⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣤⡀⠀⠀⠀⠀",
+                "⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⠀⠀⠀",
+                "⠀⢀⣾⣿⣿⣿⣿⣿⣿⣿⡿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀",
+                "⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⡇⠈⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀",
+                "⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⡄",
+                "⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⣉⣿⣿⣿⣿⣿⣿⣿⡇",
+                "⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⢀⣴⣾⣿⣿⣿⣿⣿⣿⣿⣿⠃",
+                "⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⡇⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠀",
+                "⠀⠈⢿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠀",
+                "⠀⠀⠀⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⠀⠀⠀",
+                "⠀⠀⠀⠀⠈⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⠁⠀⠀⠀⠀",
+                "⠀⠀⠀⠀⠀⠀⠀⠈⠙⠛⠛⠿⠿⠿⠿⠛⠛⠋⠁⠀⠀⠀⠀⠀⠀⠀",
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ModifierStyle {
     pub(crate) style: TextStyle,
 }
@@ -666,6 +754,8 @@ pub(crate) enum ElementType {
     PresentationDate,
     PresentationAuthor,
     Table,
+    BlockQuote,
+    List,
 }
 
 #[derive(Clone, Debug)]

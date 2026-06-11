@@ -74,6 +74,9 @@ pub(crate) enum RenderOperation {
     /// [RenderOperation] with the screen itself.
     RenderDynamic(Rc<dyn AsRenderOperations>),
 
+    /// Render a dynamically sequence of render operations drawing it at the top level margin
+    RenderDynamicTopLevel(Rc<dyn AsRenderOperations>),
+
     /// An operation that is rendered asynchronously.
     RenderAsync(Rc<dyn RenderAsync>),
 
@@ -81,7 +84,7 @@ pub(crate) enum RenderOperation {
     ///
     /// The value for each column is the width of the column in column-unit units, where the entire
     /// screen contains `columns.sum()` column-units.
-    InitColumnLayout { columns: Vec<u8>, grid: LayoutGrid },
+    InitColumnLayout { columns: Vec<u8>, grid: LayoutGrid, margin: Margin },
 
     /// Enter a column in a column layout.
     ///

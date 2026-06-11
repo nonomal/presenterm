@@ -69,8 +69,8 @@ Every element can have its own background/foreground color using hex notation:
 ```yaml
 default:
   colors:
-    foreground: "ff0000"
-    background: "00ff00"
+    foreground: ff0000
+    background: 00ff00
 ```
 
 ## Default style
@@ -219,62 +219,118 @@ footer:
 
 ## Slide title
 
-Slide titles, as specified by using a setext header, has the following properties:
-* `padding_top` which specifies the number of rows you want as padding before the text.
-* `padding_bottom` which specifies the number of rows you want as padding after the text.
-* `separator` which specifies whether you want a horizontal ruler after the text (and the `padding_bottom`):
+Slide titles, as specified by using a setext header, can be styled the following way:
 
 ```yaml
 slide_title:
-  padding_bottom: 1
+  # The prefix to use for the slide title.
+  prefix: "██"
+
+  # The font size to use.
+  font_size: 2
+
+  # The vertical padding added before the title.
   padding_top: 1
+
+  # The vertical padding added after the title.
+  padding_bottom: 1
+
+  # Whether to use a horizontal separator line after the title.
   separator: true
+
+  # Whether to style for the title using bold text.
+  bold: true
+
+  # Whether to style for the title using underlined text.
+  underlined: true
+
+  # Whether to style for the title using italics text.
+  italics: true
+
+  # The colors to use.
+  colors:
+    foreground: beeeff
+    background: feeedd
 ```
 
 ## Headings
 
-Every header type (h1 through h6) can have its own style composed of:
-* The prefix you want to use.
-* The colors, just like any other element:
+Every header type (h1 through h6) can have its own style. Each of them can be styled using the following attributes:
 
 ```yaml
 headings:
+  # H1 style.
   h1:
+    # The prefix to use for the heading
     prefix: "██"
+
+    # The colors to use.
     colors:
-      foreground: "rgb_(48,133,195)"
+      foreground: beeeff
+      background: feeedd
+    # Whether to style for the title using bold text.
+    bold: true
+
+    # Whether to style for the title using underlined text.
+    underlined: true
+
+    # Whether to style for the title using italics text.
+    italics: true
+  
+  # H2 style, same as the keys for H1.
   h2:
     prefix: "▓▓▓"
     colors:
-      foreground: "rgb_(168,223,142)"
+      foreground: feeedd
 ```
 
 ## Code blocks
 
 The syntax highlighting for code blocks is done via the [syntect](https://github.com/trishume/syntect) crate. The list 
-of all the supported built-in _syntect_ themes is the following:
+of all the supported themes is the following:
 
 * base16-ocean.dark
 * base16-eighties.dark
 * base16-mocha.dark
 * base16-ocean.light
+* Catppuccin
+* Coldark
+* DarkNeon
 * InspiredGitHub
+* Nord-sublime
+* Solarized
 * Solarized (dark)
 * Solarized (light)
+* TwoDark
+* dracula-sublime
+* github-sublime-theme
+* gruvbox
+* onehalf
+* sublime-monokai-extended
+* sublime-snazzy
+* visual-studio-dark-plus
+* zenburn
 
-Besides those and thanks to the work done on the awesome [bat tool](https://github.com/sharkdp/bat), _presenterm_ has 
-access to not only the built-in _syntect_'s built-in themes but also the ones in _bat_. Run `bat --list-themes` to see a 
-list of all of them.
+Most of these are taken from the [bat tool](https://github.com/sharkdp/bat), thanks to the people behind `bat` for 
+implementing them!
 
-Code blocks can also have an optional vertical and horizontal padding so your code is not too close to its bounding 
-rectangle:
+Code blocks can also have a few additional properties:
 
 ```yaml
 code:
+  # The code theme.
   theme_name: base16-eighties.dark
+
+  # The padding to be applied, in cells, around a code snippet.
   padding:
     horizontal: 2
     vertical: 1
+
+  # Whether the theme's background color should be used around the code block.
+  background: false
+
+  # Whether to set line numbers in all snippets by default.
+  line_numbers: false
 ```
 
 #### Custom highlighting themes
@@ -392,3 +448,17 @@ Similarly, these colors can be used in `span` tags like:
 
 These colors can used anywhere in your presentation as well as in other places such as in
 [template footers](#template-footers) and [introduction slides](../introduction.md#introduction-slide).
+
+## Bold/italics styling
+
+Bold and italics text is not given any colors by default. The `bold` and `italics` top level keys can be used to define 
+a set of colors to use for them:
+
+```yaml
+bold:
+  colors:
+    foreground: red
+italics:
+  colors:
+    background: blue
+```

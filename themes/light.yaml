@@ -6,6 +6,10 @@ default:
     foreground: "212529"
     background: "f8f9fa"
 
+column_layout:
+  margin:
+    fixed: 4
+
 slide_title:
   alignment: center
   padding_bottom: 1
@@ -41,6 +45,15 @@ execution_output:
   padding:
     horizontal: 2
     vertical: 1
+
+pty_output:
+  colors:
+    foreground: "212529"
+    background: "e9ecef"
+  cursor:
+    highlight_colors:
+      foreground: "e9ecef"
+      background: "212529"
 
 inline_code:
   colors:

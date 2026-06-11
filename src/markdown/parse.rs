@@ -3,14 +3,20 @@ use super::{
     html::{HtmlInline, HtmlParser, ParseHtmlError},
     text_style::TextStyle,
 };
-use crate::{markdown::html::HtmlTag, theme::raw::RawColor};
+use crate::{
+    markdown::{
+        elements::{TableColumn, TableColumnAlignment},
+        html::HtmlTag,
+    },
+    theme::raw::RawColor,
+};
 use comrak::{
-    Arena, ComrakOptions,
+    Arena, Options,
     arena_tree::Node,
     format_commonmark,
     nodes::{
         Ast, AstNode, ListDelimType, ListType, NodeAlert, NodeCodeBlock, NodeFootnoteDefinition, NodeHeading,
-        NodeHtmlBlock, NodeList, NodeValue, Sourcepos,
+        NodeHtmlBlock, NodeList, NodeTable, NodeValue, Sourcepos,
     },
     parse_document,
 };
@@ -27,7 +33,7 @@ struct ParserOptions(comrak::Options<'static>);
 
 impl Default for ParserOptions {
     fn default() -> Self {
-        let mut options = ComrakOptions::default();
+        let mut options = Options::default();
         options.extension.front_matter_delimiter = Some("---".into());
         options.extension.table = true;
         options.extension.strikethrough = true;
@@ -36,6 +42,7 @@ impl Default for ParserOptions {
         options.extension.wikilinks_title_before_pipe = true;
         options.extension.superscript = true;
         options.extension.footnotes = true;
+        options.parse.leave_footnote_definitions = true;
         Self(options)
     }
 }
@@ -44,13 +51,13 @@ impl Default for ParserOptions {
 ///
 /// This takes the contents of a markdown file and parses it into a list of [MarkdownElement].
 pub struct MarkdownParser<'a> {
-    arena: &'a Arena<AstNode<'a>>,
+    arena: &'a Arena<'a>,
     options: comrak::Options<'static>,
 }
 
 impl<'a> MarkdownParser<'a> {
     /// Construct a new markdown parser.
-    pub fn new(arena: &'a Arena<AstNode<'a>>) -> Self {
+    pub fn new(arena: &'a Arena<'a>) -> Self {
         Self { arena, options: ParserOptions::default().0 }
     }
 
@@ -105,7 +112,7 @@ impl<'a> MarkdownParser<'a> {
                 let items = self.parse_list(node, list.marker_offset as u8 / 2)?;
                 MarkdownElement::List(items)
             }
-            NodeValue::Table(_) => self.parse_table(node)?,
+            NodeValue::Table(table) => self.parse_table(table, node)?,
             NodeValue::CodeBlock(block) => Self::parse_code_block(block, data.sourcepos)?,
             NodeValue::ThematicBreak => MarkdownElement::ThematicBreak,
             NodeValue::HtmlBlock(block) => self.parse_html_block(block, data.sourcepos)?,
@@ -310,9 +317,19 @@ impl<'a> MarkdownParser<'a> {
         Ok(elements)
     }
 
-    fn parse_table(&self, node: &'a AstNode<'a>) -> ParseResult<MarkdownElement> {
-        let mut header = TableRow(Vec::new());
+    fn parse_table(&self, table: &NodeTable, node: &'a AstNode<'a>) -> ParseResult<MarkdownElement> {
+        let mut columns = Vec::new();
         let mut rows = Vec::new();
+        let alignments: Vec<_> = table
+            .alignments
+            .iter()
+            .map(|a| match a {
+                comrak::nodes::TableAlignment::None => TableColumnAlignment::default(),
+                comrak::nodes::TableAlignment::Left => TableColumnAlignment::Left,
+                comrak::nodes::TableAlignment::Center => TableColumnAlignment::Center,
+                comrak::nodes::TableAlignment::Right => TableColumnAlignment::Right,
+            })
+            .collect();
         for node in node.children() {
             let data = node.data.borrow();
             let NodeValue::TableRow(_) = &data.value else {
@@ -323,13 +340,18 @@ impl<'a> MarkdownParser<'a> {
                 .with_sourcepos(data.sourcepos));
             };
             let row = self.parse_table_row(node)?;
-            if header.0.is_empty() {
-                header = row;
+            if columns.is_empty() {
+                let TableRow(texts) = row;
+                columns = texts
+                    .into_iter()
+                    .zip(alignments.iter().copied())
+                    .map(|(text, alignment)| TableColumn { text, alignment })
+                    .collect();
             } else {
                 rows.push(row)
             }
         }
-        Ok(MarkdownElement::Table(Table { header, rows }))
+        Ok(MarkdownElement::Table(Table { columns, rows }))
     }
 
     fn parse_table_row(&self, node: &'a AstNode<'a>) -> ParseResult<TableRow> {
@@ -363,13 +385,13 @@ enum StringifyImages {
 struct InlinesParser<'a> {
     inlines: Vec<Inline>,
     pending_text: Vec<Text<RawColor>>,
-    arena: &'a Arena<AstNode<'a>>,
+    arena: &'a Arena<'a>,
     soft_break: SoftBreak,
     stringify_images: StringifyImages,
 }
 
 impl<'a> InlinesParser<'a> {
-    fn new(arena: &'a Arena<AstNode<'a>>, soft_break: SoftBreak, stringify_images: StringifyImages) -> Self {
+    fn new(arena: &'a Arena<'a>, soft_break: SoftBreak, stringify_images: StringifyImages) -> Self {
         Self { inlines: Vec::new(), pending_text: Vec::new(), arena, soft_break, stringify_images }
     }
 
@@ -448,7 +470,7 @@ impl<'a> InlinesParser<'a> {
                 // The image "title" contains inlines so we create a dummy paragraph node that
                 // contains it so we can flatten it back into text. We could walk the tree but this
                 // is good enough.
-                let mut buffer = Vec::new();
+                let mut buffer = String::new();
                 let paragraph =
                     self.arena.alloc(Node::new(RefCell::new(Ast::new(NodeValue::Paragraph, data.sourcepos.start))));
                 for child in node.children() {
@@ -457,7 +479,7 @@ impl<'a> InlinesParser<'a> {
                 format_commonmark(paragraph, &ParserOptions::default().0, &mut buffer)
                     .map_err(|e| ParseErrorKind::Internal(e.to_string()).with_sourcepos(data.sourcepos))?;
 
-                let title = String::from_utf8_lossy(&buffer).trim_end().to_string();
+                let title = buffer.trim_end().to_string();
                 self.inlines.push(Inline::Image { path: link.url.clone(), title });
             }
             NodeValue::Paragraph => {
@@ -675,6 +697,8 @@ impl Identifier for NodeValue {
             NodeValue::Subscript => "subscript",
             NodeValue::Raw(_) => "raw",
             NodeValue::Alert(_) => "alert",
+            NodeValue::Subtext => "subtext",
+            NodeValue::Highlight => "highlight",
         }
     }
 }
@@ -987,8 +1011,8 @@ let q = 42;
 | Carrot | Yuck |
 ",
         );
-        let MarkdownElement::Table(Table { header, rows }) = parsed else { panic!("not a table: {parsed:?}") };
-        assert_eq!(header.0.len(), 2);
+        let MarkdownElement::Table(Table { columns, rows }) = parsed else { panic!("not a table: {parsed:?}") };
+        assert_eq!(columns.len(), 2);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0.len(), 2);
         assert_eq!(rows[1].0.len(), 2);
@@ -1173,9 +1197,11 @@ mom
 this[^1]
 
 [^1]: ref
+
+abc
         ";
         let elements = parse_all(input);
-        assert_eq!(elements.len(), 2);
+        assert_eq!(elements.len(), 3);
 
         let MarkdownElement::Paragraph(line) = &elements[0] else { panic!("not a paragraph") };
         assert_eq!(line, &[Line(vec![Text::from("this"), Text::new("1", TextStyle::default().superscript())])]);

@@ -1,3 +1,98 @@
+# v0.16.1 - 2026-02-19
+
+## New features
+
+* Allow `italic` to be used as well as `italics` in theme ([#847](https://github.com/mfontanini/presenterm/issues/847)).
+
+## Fixes
+
+* Render modals at the center of the screen ([#848](https://github.com/mfontanini/presenterm/issues/848)).
+
+## Docs
+
+* Add styling docs to `slide_title` ([#845](https://github.com/mfontanini/presenterm/issues/845)) - thanks @0atman.
+* Describe slide titles and headings better ([#846](https://github.com/mfontanini/presenterm/issues/846)).
+
+# v0.16.0 - 2026-02-15
+
+## Breaking changes
+
+* Sixel is now supported in all platform and enabled by default. The will break any build scripts that enable the `sixel` feature flag since that is now gone. Any maintainer that is building the package and enabling that flag should no longer do so ([#828](https://github.com/mfontanini/presenterm/issues/828)).
+
+## New features
+
+* Allow [executing snippets inside a PTY](https://mfontanini.github.io/presenterm/features/code/execution.html#running-code-in-pseudo-terminal-pty). This allows you to run tools that move the cursor around and redraw the terminal inside a slide (e.g. `top`, `htop`, etc). ([#781](https://github.com/mfontanini/presenterm/issues/781)) ([#794](https://github.com/mfontanini/presenterm/issues/794)) ([#809](https://github.com/mfontanini/presenterm/issues/809)) ([#788](https://github.com/mfontanini/presenterm/issues/788)) ([#808](https://github.com/mfontanini/presenterm/issues/808)) ([#807](https://github.com/mfontanini/presenterm/issues/807)) ([#789](https://github.com/mfontanini/presenterm/issues/789)).
+* Use `icy_sixel` crate instead of `sixel-rs`. `icy_sixel` is a pure rust crate which simplifies code distribution and allows enabling `sixel` support by default ([#818](https://github.com/mfontanini/presenterm/issues/818)) - thanks @gcavelier.
+* Add support for [user comments](https://mfontanini.github.io/presenterm/features/commands.html#user-comments) in presentation rendering ([#773](https://github.com/mfontanini/presenterm/issues/773)).
+* Allow passing in a [mermaid config file](https://mfontanini.github.io/presenterm/features/commands.html#mermaid) ([#833](https://github.com/mfontanini/presenterm/issues/833)).
+* Allow specifying `mmdc` [puppeteer config path](https://mfontanini.github.io/presenterm/features/commands.html#mermaid) ([#830](https://github.com/mfontanini/presenterm/issues/830)) ([#842](https://github.com/mfontanini/presenterm/issues/842)).
+* Add [keymap](https://mfontanini.github.io/presenterm/features/introduction.html#toggle-visual-grid) to toggle layout grid ([#718](https://github.com/mfontanini/presenterm/issues/718)).
+* Add [`+auto_exec`](https://mfontanini.github.io/presenterm/features/code/execution.html#automatic-execution) attribute to snippets ([#732](https://github.com/mfontanini/presenterm/issues/732)).
+* Update bat themes/syntaxes to latest to support a few new themes ([#811](https://github.com/mfontanini/presenterm/issues/811)).
+* Add tokyonight moon/day/night themes ([#751](https://github.com/mfontanini/presenterm/issues/751)) - thanks @cloudlena.
+* Allow configuring a global alignment in theme ([#801](https://github.com/mfontanini/presenterm/issues/801)).
+* Add dynamic theme option (light/dark) based on terminal color ([#778](https://github.com/mfontanini/presenterm/issues/778)) - thanks @JOTSR.
+* Add common es executors and support jsx and ts(x) snippets ([#783](https://github.com/mfontanini/presenterm/issues/783)) - thanks @JOTSR.
+* Allow configuring code block line numbers at theme level ([#771](https://github.com/mfontanini/presenterm/issues/771)).
+* Allow setting prefix on slide titles ([#739](https://github.com/mfontanini/presenterm/issues/739)).
+* Allow configuring whether first h1 heading is slide title ([#738](https://github.com/mfontanini/presenterm/issues/738)) ([#756](https://github.com/mfontanini/presenterm/issues/756)).
+* Allow styling bold/italics ([#737](https://github.com/mfontanini/presenterm/issues/737)).
+* Respect `pause` in speaker notes ([#735](https://github.com/mfontanini/presenterm/issues/735)).
+* Add `--list-comment-commands` cli option ([#723](https://github.com/mfontanini/presenterm/issues/723)) - thanks @rochacbruno.
+* Allow setting headings to be bold/italics/underlined ([#721](https://github.com/mfontanini/presenterm/issues/721)).
+* Add `typescript-react/tsx` highlighting ([#777](https://github.com/mfontanini/presenterm/issues/777)) - thanks @JOTSR.
+* Add dart code highlighting #779 ([#780](https://github.com/mfontanini/presenterm/issues/780)) - thanks @alycda.
+* Add ms windows executors and highlight (`cmd`, `wsl`, `bat`, `pwsh`) ([#799](https://github.com/mfontanini/presenterm/issues/799)) - thanks @JOTSR.
+* Add Elixir to executors ([#709](https://github.com/mfontanini/presenterm/issues/709)) - thanks @kevinschweikert.
+* Support gdscript syntax highlighting ([#820](https://github.com/mfontanini/presenterm/issues/820)) - thanks @TitanNano.
+
+## Fixes
+
+* Use right size for footer images ([#840](https://github.com/mfontanini/presenterm/issues/840)).
+* Don't crash when exporting `+image` snippets ([#827](https://github.com/mfontanini/presenterm/issues/827)).
+* Clippy useless conversion ([#805](https://github.com/mfontanini/presenterm/issues/805)) - thanks @JOTSR.
+* Preserve footnote definition location ([#803](https://github.com/mfontanini/presenterm/issues/803)).
+* Respect global alignment for lists ([#802](https://github.com/mfontanini/presenterm/issues/802)).
+* Don't crash sending event if presentation is in error state ([#800](https://github.com/mfontanini/presenterm/issues/800)).
+* Highlight php code even if it doesn't start with "<?php" ([#796](https://github.com/mfontanini/presenterm/issues/796)).
+* Handle dark/light colors properly when converting from 8bt ([#793](https://github.com/mfontanini/presenterm/issues/793)).
+* Use legible color in tokyonight-day's block quote/alert style ([#792](https://github.com/mfontanini/presenterm/issues/792)).
+* Allow column layouts in included files ([#776](https://github.com/mfontanini/presenterm/issues/776)).
+* Use `show_pauses` in sample config ([#745](https://github.com/mfontanini/presenterm/issues/745)).
+* Don't consider prefix part of the title ([#740](https://github.com/mfontanini/presenterm/issues/740)).
+* Keep state between pauses on pause-new-slide ([#731](https://github.com/mfontanini/presenterm/issues/731)).
+* Don't add extra heading lines depending on font size ([#719](https://github.com/mfontanini/presenterm/issues/719)).
+* Consider color range 0x08.. - 0x0f.. in bat themes ([#706](https://github.com/mfontanini/presenterm/issues/706)).
+
+## Chore
+
+* Increase async render polling speed ([#806](https://github.com/mfontanini/presenterm/issues/806)).
+* Add script to generate config file json schema ([#791](https://github.com/mfontanini/presenterm/issues/791)).
+* Restructure snippet execution attributes ([#787](https://github.com/mfontanini/presenterm/issues/787)).
+* Bump dependencies ([#772](https://github.com/mfontanini/presenterm/issues/772)).
+* Unify text styling based on theme ([#734](https://github.com/mfontanini/presenterm/issues/734)).
+
+## Docs
+
+* Fix typo in config theme section ([#804](https://github.com/mfontanini/presenterm/issues/804)) - thanks @JOTSR.
+* Fix typo in code execution docs ([#782](https://github.com/mfontanini/presenterm/issues/782)) - thanks @gcavelier.
+* Sync supported terminals ([#722](https://github.com/mfontanini/presenterm/issues/722)) - thanks @gcavelier.
+* Document overflow validation ([#712](https://github.com/mfontanini/presenterm/issues/712)).
+* Add new sample presentation about ratatui on embedded ([#817](https://github.com/mfontanini/presenterm/issues/817)) - thanks @Vaishnav-Sabari-Girish.
+* Add new sample presentation about Hayasen library ([#813](https://github.com/mfontanini/presenterm/issues/813)) - thanks @Vaishnav-Sabari-Girish.
+
+## ❤️ Sponsors
+
+Thanks to the following users who supported _presenterm_ via a [github sponsorship](https://github.com/sponsors/mfontanini) in this release:
+
+* [@0atman](https://github.com/0atman)
+* [@orhun](https://github.com/orhun)
+* [@gwpl](https://github.com/gwpl)
+* [@ADS-Fund](https://github.com/ADS-Fund)
+* [@jonas-grobe](https://github.com/jonas-grobe)
+* [@sidju](https://github.com/sidju)
+* [@alycda](https://github.com/alycda)
+
 # v0.15.1 - 2025-08-01
 
 ## Fixes

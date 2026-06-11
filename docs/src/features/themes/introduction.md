@@ -29,6 +29,20 @@ theme:
 ---
 ```
 
+Built-in light/dark theme detection allows you to define a different theme for each variant:
+
+
+```yaml
+---
+theme:
+  # The theme used if your terminal is using light colors.
+  light: light
+
+  # The theme used if your terminal is using dark colors.
+  dark: dark
+---
+```
+
 #### By path
 
 You can define a theme file in yaml format somewhere in your filesystem and reference it within the presentation:
@@ -80,7 +94,11 @@ Currently, the following themes are supported:
 * `terminal-dark`: A theme that uses your terminals color and looks best if your terminal uses a dark color scheme. This 
 means if your terminal background is e.g. transparent, or uses an image, the presentation will inherit that.
 * `terminal-light`: The same as `terminal-dark` but works best if your terminal uses a light color scheme.
-* `tokyonight-storm`: A theme inspired by the colors used in [toyonight](https://github.com/folke/tokyonight.nvim).
+* A set of themes based on the [toyonight](https://github.com/folke/tokyonight.nvim) color palette:
+    * `tokyonight-moon`
+    * `tokyonight-day`
+    * `tokyonight-night`
+    * `tokyonight-storm`
 
 ## Trying out built-in themes
 

@@ -172,6 +172,11 @@ quicklier rather than scanning through each of them.
 
 The key bindings modal displays the key bindings for each of the supported actions and can be opened by pressing `?`.
 
+## Toggle visual grid
+
+Press uppercase `T` by default to toggle the layout grid. This is useful when using a column layout and trying to 
+understand how wide each column is. See [this PR](https://github.com/mfontanini/presenterm/pull/718) for more details.
+
 # Hot reload
 
 Unless you run in presentation mode by passing in the `--present` parameter, _presenterm_ will automatically reload your 

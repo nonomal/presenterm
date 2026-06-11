@@ -122,6 +122,9 @@ pub(crate) enum InvalidPresentation {
 
     #[error("snippet id '{0}' already exists")]
     SnippetAlreadyExists(String),
+
+    #[error("invalid env file format: expected <key>=<value>")]
+    InvalidEnvFile,
 }
 
 #[derive(Clone, Debug)]
@@ -230,7 +233,7 @@ mod tests {
     }
 
     fn make_builder<'a>(source_line: &'a str, error: &'a str) -> ErrorContextBuilder<'a> {
-        let mut builder = ErrorContextBuilder::new(source_line.into(), error.into());
+        let mut builder = ErrorContextBuilder::new(source_line, error);
         builder.prefix_style = Default::default();
         builder.error_style = Default::default();
         builder

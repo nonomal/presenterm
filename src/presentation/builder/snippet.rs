@@ -3,9 +3,9 @@ use crate::{
     code::{
         execute::LanguageSnippetExecutor,
         snippet::{
-            ExternalFile, Highlight, HighlightContext, HighlightGroup, HighlightMutator, HighlightedLine, Snippet,
-            SnippetExec, SnippetExecutorSpec, SnippetLanguage, SnippetLine, SnippetParser, SnippetRepr,
-            SnippetSplitter,
+            ExternalFile, Highlight, HighlightContext, HighlightGroup, HighlightMutator, HighlightedLine, PtyArgs,
+            Snippet, SnippetExecArgs, SnippetExecution, SnippetExecutorSpec, SnippetLanguage, SnippetLine,
+            SnippetParser, SnippetRepr, SnippetSplitter,
         },
     },
     markdown::elements::SourcePosition,
@@ -19,12 +19,13 @@ use crate::{
     ui::execution::{
         RunAcquireTerminalSnippet, RunImageSnippet, SnippetExecutionDisabledOperation, SnippetOutputOperation,
         disabled::ExecutionType,
-        output::{ExecIndicator, ExecIndicatorStyle, RunSnippetTrigger, SnippetHandle},
+        output::{ExecIndicator, ExecIndicatorStyle, RunSnippetTrigger, SnippetHandle, WrappedSnippetHandle},
+        pty::{PtySnippetHandle, PtySnippetOutputOperation, RunPtySnippetTrigger},
         validator::ValidateSnippetOperation,
     },
 };
 use itertools::Itertools;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 impl PresentationBuilder<'_, '_> {
     pub(crate) fn push_code(&mut self, info: String, code: String, source_position: SourcePosition) -> BuildResult {
@@ -37,12 +38,14 @@ impl PresentationBuilder<'_, '_> {
             snippet.attributes.line_numbers = true;
         }
         if self.options.auto_render_languages.contains(&snippet.language) {
-            snippet.attributes.representation = SnippetRepr::Render;
+            snippet.attributes.execution = SnippetExecution::Render;
         }
         // Ids can only be used in `+exec` snippets.
         if snippet.attributes.id.is_some()
-            && (!matches!(snippet.attributes.execution, SnippetExec::Exec(_))
-                || !matches!(snippet.attributes.representation, SnippetRepr::Snippet))
+            && !matches!(
+                snippet.attributes.execution,
+                SnippetExecution::Exec(SnippetExecArgs { repr: SnippetRepr::SnippetOutput, .. })
+            )
         {
             return Err(self.invalid_presentation(source_position, InvalidPresentation::SnippetIdNonExec));
         }
@@ -51,85 +54,118 @@ impl PresentationBuilder<'_, '_> {
         // Redraw slide if attributes change
         self.push_differ(format!("{:?}", snippet.attributes));
 
-        let execution_allowed = self.is_execution_allowed(&snippet);
-        match snippet.attributes.representation {
-            SnippetRepr::Render => return self.push_rendered_code(snippet, source_position),
-            SnippetRepr::Image => {
-                if execution_allowed {
-                    return self.push_code_as_image(snippet);
-                }
-            }
-            SnippetRepr::ExecReplace => {
-                if execution_allowed {
-                    return self.push_replace_code_execution(snippet.clone());
-                }
-            }
-            SnippetRepr::Snippet => (),
-        };
+        if let Some(spec) = &snippet.attributes.validate {
+            // Take the execution spec if we use the default one, otherwise use the one provided.
+            // This allows using `rust +exec:foo +validate` and using `foo` as the executor.
+            let spec = match (spec, &snippet.attributes.execution) {
+                (SnippetExecutorSpec::Default, SnippetExecution::Exec(args)) => &args.spec,
+                _ => spec,
+            };
+            let env = match &snippet.attributes.env_file {
+                Some(path) => self.load_env(path, source_position)?,
+                None => HashMap::new(),
+            };
+            let executor = self.snippet_executor.language_executor(&snippet.language, spec, env)?;
+            self.push_validator(&snippet, &executor);
+        }
 
-        let block_length = self.push_code_lines(&snippet);
-        match snippet.attributes.execution.clone() {
-            SnippetExec::None => Ok(()),
-            SnippetExec::Exec(_) | SnippetExec::AutoExec(_) | SnippetExec::AcquireTerminal(_) if !execution_allowed => {
-                let mut exec_type = match snippet.attributes.representation {
+        match &snippet.attributes.execution {
+            SnippetExecution::None => {
+                self.push_code_lines(&snippet);
+            }
+            SnippetExecution::Render => {
+                self.push_rendered_code(snippet, source_position)?;
+            }
+            SnippetExecution::Exec(args) if !self.is_execution_allowed(args) => {
+                self.push_code_lines(&snippet);
+                let mut exec_type = match args.repr {
                     SnippetRepr::Image => ExecutionType::Image,
                     SnippetRepr::ExecReplace => ExecutionType::ExecReplace,
-                    SnippetRepr::Render | SnippetRepr::Snippet => ExecutionType::Execute,
+                    SnippetRepr::SnippetOutput | SnippetRepr::AcquireTerminal => ExecutionType::Execute,
                 };
-                if matches!(snippet.attributes.execution, SnippetExec::AutoExec(_)) {
+                if args.auto {
                     exec_type = ExecutionType::ExecReplace;
                 }
                 self.push_execution_disabled_operation(exec_type);
-                Ok(())
             }
-            SnippetExec::Exec(spec) | SnippetExec::AutoExec(spec) => {
-                let policy = if matches!(snippet.attributes.execution, SnippetExec::AutoExec(_)) {
-                    RenderAsyncStartPolicy::Automatic
-                } else {
-                    RenderAsyncStartPolicy::OnDemand
+            SnippetExecution::Exec(args) => {
+                let env = match &snippet.attributes.env_file {
+                    Some(path) => self.load_env(path, source_position)?,
+                    None => HashMap::new(),
                 };
-                let executor = self.snippet_executor.language_executor(&snippet.language, &spec)?;
-                let alignment = self.code_style(&snippet).alignment;
-                let handle = SnippetHandle::new(snippet.clone(), executor, policy);
-                self.chunk_operations
-                    .push(RenderOperation::RenderAsync(Rc::new(RunSnippetTrigger::new(handle.clone()))));
-                self.push_indicator(handle.clone(), block_length, alignment);
-                match snippet.attributes.id.clone() {
-                    Some(id) => {
-                        if self.executable_snippets.insert(id.clone(), handle).is_some() {
-                            return Err(self
-                                .invalid_presentation(source_position, InvalidPresentation::SnippetAlreadyExists(id)));
-                        }
-                        Ok(())
+                let executor = self.snippet_executor.language_executor(&snippet.language, &args.spec, env)?;
+                match args.repr {
+                    SnippetRepr::Image => {
+                        self.push_code_as_image(snippet, executor)?;
                     }
-                    None => {
-                        self.push_line_break();
-                        self.push_code_execution(block_length, handle, alignment)
+                    SnippetRepr::ExecReplace => match &args.pty {
+                        Some(args) => {
+                            let args = args.clone();
+                            self.push_replace_pty_code_execution(snippet, executor, args)?;
+                        }
+                        None => {
+                            self.push_replace_code_execution(snippet, executor)?;
+                        }
+                    },
+                    SnippetRepr::AcquireTerminal => {
+                        let block_length = self.push_code_lines(&snippet);
+                        self.push_acquire_terminal_execution(snippet, block_length, executor)?;
+                    }
+                    SnippetRepr::SnippetOutput => {
+                        let block_length = self.push_code_lines(&snippet);
+                        let policy = if args.auto {
+                            RenderAsyncStartPolicy::Automatic
+                        } else {
+                            RenderAsyncStartPolicy::OnDemand
+                        };
+                        let handle: WrappedSnippetHandle = match &args.pty {
+                            Some(args) => PtySnippetHandle::new(snippet.clone(), executor, policy, args.clone()).into(),
+                            None => SnippetHandle::new(snippet.clone(), executor, policy).into(),
+                        };
+                        self.chunk_operations.push(RenderOperation::RenderAsync(handle.build_trigger().into()));
+
+                        let alignment = self.code_style(&snippet).alignment;
+                        self.push_indicator(handle.clone(), block_length, alignment);
+                        match snippet.attributes.id.clone() {
+                            Some(id) => {
+                                if self.executable_snippets.insert(id.clone(), handle).is_some() {
+                                    return Err(self.invalid_presentation(
+                                        source_position,
+                                        InvalidPresentation::SnippetAlreadyExists(id),
+                                    ));
+                                }
+                            }
+                            None => {
+                                self.push_line_break();
+                                match handle {
+                                    WrappedSnippetHandle::Normal(handle) => {
+                                        self.push_code_execution(block_length, handle, alignment)?;
+                                    }
+                                    WrappedSnippetHandle::Pty(handle) => self.push_pty_code_execution(handle)?,
+                                }
+                            }
+                        }
                     }
                 }
             }
-            SnippetExec::AcquireTerminal(spec) => self.push_acquire_terminal_execution(snippet, block_length, &spec),
-            SnippetExec::Validate(spec) => {
-                let executor = self.snippet_executor.language_executor(&snippet.language, &spec)?;
-                self.push_validator(&snippet, &executor);
-                Ok(())
+        };
+        Ok(())
+    }
+
+    pub(crate) fn push_detached_code_execution(&mut self, handle: WrappedSnippetHandle) -> BuildResult {
+        match handle {
+            WrappedSnippetHandle::Normal(handle) => {
+                let alignment = self.code_style(&handle.snippet()).alignment;
+                self.push_code_execution(0, handle, alignment)
             }
+            WrappedSnippetHandle::Pty(handle) => self.push_pty_code_execution(handle),
         }
     }
 
-    pub(crate) fn push_detached_code_execution(&mut self, handle: SnippetHandle) -> BuildResult {
-        let alignment = self.code_style(&handle.snippet()).alignment;
-        self.push_code_execution(0, handle, alignment)
-    }
-
-    fn is_execution_allowed(&self, snippet: &Snippet) -> bool {
-        match snippet.attributes.representation {
-            SnippetRepr::Snippet => match snippet.attributes.execution {
-                SnippetExec::AutoExec(_) => self.options.enable_snippet_execution_replace,
-                _ => self.options.enable_snippet_execution,
-            },
+    fn is_execution_allowed(&self, args: &SnippetExecArgs) -> bool {
+        match args.repr {
+            SnippetRepr::SnippetOutput | SnippetRepr::AcquireTerminal => self.options.enable_snippet_execution,
             SnippetRepr::Image | SnippetRepr::ExecReplace => self.options.enable_snippet_execution_replace,
-            SnippetRepr::Render => true,
         }
     }
 
@@ -149,11 +185,7 @@ impl PresentationBuilder<'_, '_> {
         block_length
     }
 
-    fn push_replace_code_execution(&mut self, snippet: Snippet) -> BuildResult {
-        // TODO: representation and execution should probably be merged
-        let SnippetExec::Exec(spec) = snippet.attributes.execution.clone() else {
-            panic!("not an exec snippet");
-        };
+    fn push_replace_code_execution(&mut self, snippet: Snippet, executor: LanguageSnippetExecutor) -> BuildResult {
         let alignment = match self.code_style(&snippet).alignment {
             // If we're replacing the snippet output, we have center alignment and no background, use
             // center alignment but without any margins and minimum sizes so we truly center the output.
@@ -162,10 +194,27 @@ impl PresentationBuilder<'_, '_> {
             }
             other => other,
         };
-        let executor = self.snippet_executor.language_executor(&snippet.language, &spec)?;
         let handle = SnippetHandle::new(snippet, executor, RenderAsyncStartPolicy::Automatic);
         self.chunk_operations.push(RenderOperation::RenderAsync(Rc::new(RunSnippetTrigger::new(handle.clone()))));
         self.push_code_execution(0, handle, alignment)
+    }
+
+    fn push_replace_pty_code_execution(
+        &mut self,
+        snippet: Snippet,
+        executor: LanguageSnippetExecutor,
+        args: PtyArgs,
+    ) -> BuildResult {
+        let standby = args.standby;
+        let policy = if standby { RenderAsyncStartPolicy::OnDemand } else { RenderAsyncStartPolicy::Automatic };
+        let handle = PtySnippetHandle::new(snippet, executor, policy, args);
+        // If we're using standby mode we still need a trigger
+        if standby {
+            self.chunk_operations
+                .push(RenderOperation::RenderAsync(WrappedSnippetHandle::from(handle.clone()).build_trigger().into()));
+        }
+        self.chunk_operations.push(RenderOperation::RenderAsync(Rc::new(RunPtySnippetTrigger::new(handle.clone()))));
+        self.push_pty_code_execution(handle)
     }
 
     fn load_external_snippet(
@@ -231,9 +280,10 @@ impl PresentationBuilder<'_, '_> {
             let mut highlighter = self.highlighter.language_highlighter(&SnippetLanguage::Rust);
             highlighter.style_line("//", &style).0.first().expect("no styles").style.size(font_size)
         };
-        let groups = match self.options.allow_mutations {
-            true => code.attributes.highlight_groups.clone(),
-            false => vec![HighlightGroup::new(vec![Highlight::All])],
+        let groups = if self.options.allow_mutations || code.attributes.highlight_groups.len() == 1 {
+            code.attributes.highlight_groups.clone()
+        } else {
+            vec![HighlightGroup::new(vec![Highlight::All])]
         };
         let context =
             Rc::new(RefCell::new(HighlightContext { groups, current: 0, block_length, alignment: style.alignment }));
@@ -280,10 +330,7 @@ impl PresentationBuilder<'_, '_> {
         self.chunk_operations.push(RenderOperation::RenderAsync(Rc::new(operation)));
     }
 
-    fn push_code_as_image(&mut self, snippet: Snippet) -> BuildResult {
-        let executor = self.snippet_executor.language_executor(&snippet.language, &Default::default())?;
-        self.push_validator(&snippet, &executor);
-
+    fn push_code_as_image(&mut self, snippet: Snippet, executor: LanguageSnippetExecutor) -> BuildResult {
         let operation =
             RunImageSnippet::new(snippet, executor, self.image_registry.clone(), self.theme.execution_output.status);
         let operation = RenderOperation::RenderAsync(Rc::new(operation));
@@ -295,9 +342,8 @@ impl PresentationBuilder<'_, '_> {
         &mut self,
         snippet: Snippet,
         block_length: u16,
-        spec: &SnippetExecutorSpec,
+        executor: LanguageSnippetExecutor,
     ) -> BuildResult {
-        let executor = self.snippet_executor.language_executor(&snippet.language, spec)?;
         let block_length = self.theme.code.alignment.adjust_size(block_length);
         let operation = RunAcquireTerminalSnippet::new(
             snippet,
@@ -311,7 +357,7 @@ impl PresentationBuilder<'_, '_> {
         Ok(())
     }
 
-    fn push_indicator(&mut self, handle: SnippetHandle, block_length: u16, alignment: Alignment) {
+    fn push_indicator<T: Into<WrappedSnippetHandle>>(&mut self, handle: T, block_length: u16, alignment: Alignment) {
         let style = ExecIndicatorStyle {
             theme: self.theme.execution_output.status,
             block_length,
@@ -323,10 +369,7 @@ impl PresentationBuilder<'_, '_> {
     }
 
     fn push_code_execution(&mut self, block_length: u16, handle: SnippetHandle, alignment: Alignment) -> BuildResult {
-        let executor = handle.executor();
         let snippet = handle.snippet();
-        self.push_validator(&snippet, &executor);
-
         let default_colors = self.theme.default_style.style.colors;
         let mut execution_output_style = self.theme.execution_output.clone();
         if snippet.attributes.no_background {
@@ -346,6 +389,18 @@ impl PresentationBuilder<'_, '_> {
         Ok(())
     }
 
+    fn push_pty_code_execution(&mut self, handle: PtySnippetHandle) -> BuildResult {
+        let snippet = handle.snippet();
+        let mut style = self.theme.pty_output.clone();
+        if snippet.attributes.no_background {
+            style.style.colors.background = None;
+        }
+        let operation = PtySnippetOutputOperation::new(handle, style, self.slide_font_size());
+        let operation = RenderOperation::RenderDynamic(Rc::new(operation));
+        self.chunk_operations.push(operation);
+        Ok(())
+    }
+
     fn push_differ(&mut self, text: String) {
         self.chunk_operations.push(RenderOperation::RenderDynamic(Rc::new(Differ(text))));
     }
@@ -356,6 +411,31 @@ impl PresentationBuilder<'_, '_> {
         }
         let operation = ValidateSnippetOperation::new(snippet.clone(), executor.clone());
         self.chunk_operations.push(RenderOperation::RenderAsync(Rc::new(operation)));
+    }
+
+    fn load_env(&self, path: &Path, source_position: SourcePosition) -> Result<HashMap<String, String>, BuildError> {
+        let base = self.resource_base_path();
+        let contents = self.resources.external_text_file(path, &base).map_err(|e| {
+            self.invalid_presentation(
+                source_position,
+                InvalidPresentation::IncludeMarkdown { path: path.to_path_buf(), error: e },
+            )
+        })?;
+        let mut vars = HashMap::new();
+        for line in contents.lines() {
+            if line.starts_with('#') {
+                continue;
+            }
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                return Err(self.invalid_presentation(source_position, InvalidPresentation::InvalidEnvFile));
+            };
+            vars.insert(key.to_string(), value.to_string());
+        }
+        Ok(vars)
     }
 }
 
@@ -840,6 +920,27 @@ echo "{qr}"
         let lines = Test::new(input).render().rows(rows).columns(columns).into_lines();
         let empty = " ".repeat(columns as usize);
         let expected: Vec<_> = [empty.as_str()].into_iter().chain(qr.lines()).chain([empty.as_str()]).collect();
+        assert_eq!(lines, expected);
+    }
+
+    #[test]
+    fn env_file() {
+        let temp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+        let path = temp.path();
+        fs::write(path, "FOO=42\nBAR=1337\n\nTAR=hi\n# a comment\n").unwrap();
+
+        let path = path.to_string_lossy();
+        let input = format!(
+            "
+```bash +exec_replace +env:{path}
+echo \"$FOO\"
+echo \"$BAR\"
+echo \"$TAR\"
+```
+"
+        );
+        let lines = Test::new(input).render().rows(5).columns(5).into_lines();
+        let expected = &["     ", "42   ", "1337 ", "hi   ", "     "];
         assert_eq!(lines, expected);
     }
 }

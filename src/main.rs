@@ -32,6 +32,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 use terminal::emulator::TerminalEmulator;
 use theme::ThemeOptions;
@@ -55,6 +56,7 @@ mod ui;
 mod utils;
 
 const DEFAULT_THEME: &str = "dark";
+const DEFAULT_THEME_DYNAMIC_DETECTION_TIMEOUT: u64 = 100;
 const DEFAULT_EXPORT_PIXELS_PER_COLUMN: u16 = 20;
 const DEFAULT_EXPORT_PIXELS_PER_ROW: u16 = DEFAULT_EXPORT_PIXELS_PER_COLUMN * 2;
 
@@ -251,7 +253,10 @@ impl CoreComponents {
         );
         let third_party_config = ThirdPartyConfigs {
             typst_ppi: config.typst.ppi.to_string(),
+            mermaid_cli: config.mermaid.cli.clone(),
             mermaid_scale: config.mermaid.scale.to_string(),
+            mermaid_puppeteer_file: config.mermaid.puppeteer_config_path.clone(),
+            mermaid_config_file: config.mermaid.config_path.clone(),
             d2_scale: config.d2.scale.map(|s| s.to_string()).unwrap_or_else(|| "-1".to_string()),
             threads: config.snippet.render.threads,
         };
@@ -283,6 +288,7 @@ impl CoreComponents {
             command_prefix: options.command_prefix.clone().unwrap_or_default(),
             image_attribute_prefix: options.image_attributes_prefix.clone().unwrap_or_else(|| "image:".to_string()),
             incremental_lists: options.incremental_lists.unwrap_or_default(),
+            incremental_tables: options.incremental_tables.unwrap_or_default(),
             force_default_theme,
             end_slide_shorthand: options.end_slide_shorthand.unwrap_or_default(),
             print_modal_background: false,
@@ -294,6 +300,8 @@ impl CoreComponents {
             theme_options: ThemeOptions { font_size_supported: TerminalEmulator::capabilities().font_size },
             pause_before_incremental_lists: config.defaults.incremental_lists.pause_before.unwrap_or(true),
             pause_after_incremental_lists: config.defaults.incremental_lists.pause_after.unwrap_or(true),
+            pause_before_incremental_tables: config.defaults.incremental_tables.pause_before.unwrap_or(true),
+            pause_after_incremental_tables: config.defaults.incremental_tables.pause_after.unwrap_or(true),
             pause_create_new_slide: false,
             list_item_newlines: options.list_item_newlines.map(Into::into).unwrap_or(1),
             validate_snippets: config.snippet.validate,
@@ -306,20 +314,38 @@ impl CoreComponents {
         if cli.export_pdf | cli.export_html {
             GraphicsMode::Raw
         } else {
-            let protocol = cli.image_protocol.as_ref().unwrap_or(&config.defaults.image_protocol);
-            match GraphicsMode::try_from(protocol) {
-                Ok(mode) => mode,
-                Err(_) => Cli::command()
-                    .error(ErrorKind::InvalidValue, "sixel support was not enabled during compilation")
-                    .exit(),
+            cli.image_protocol.as_ref().unwrap_or(&config.defaults.image_protocol).into()
+        }
+    }
+
+    fn theme_name(config: &Config, cli: &Cli) -> String {
+        if let Some(name) = cli.theme.as_ref() {
+            name.clone()
+        } else {
+            match &config.defaults.theme {
+                config::ThemeConfig::None => DEFAULT_THEME.into(),
+                config::ThemeConfig::Some(theme_name) => theme_name.clone(),
+                config::ThemeConfig::Dynamic { dark, light, timeout } => {
+                    let default_timeout = timeout.unwrap_or(DEFAULT_THEME_DYNAMIC_DETECTION_TIMEOUT);
+                    let timeout_duration = Duration::from_millis(default_timeout);
+                    if let Ok(theme) = termbg::theme(timeout_duration) {
+                        if theme == termbg::Theme::Dark { dark.clone() } else { light.clone() }
+                    } else {
+                        Cli::command()
+                            .error(
+                                ErrorKind::Io,
+                                "terminal theme detection failed, unsupported terminal or timeout exceeded",
+                            )
+                            .exit();
+                    }
+                }
             }
         }
     }
 
     fn load_default_theme(config: &Config, themes: &Themes, cli: &Cli) -> PresentationTheme {
-        let default_theme_name =
-            cli.theme.as_ref().or(config.defaults.theme.as_ref()).map(|s| s.as_str()).unwrap_or(DEFAULT_THEME);
-        let Some(default_theme) = themes.presentation.load_by_name(default_theme_name) else {
+        let default_theme_name = Self::theme_name(config, cli);
+        let Some(default_theme) = themes.presentation.load_by_name(default_theme_name.as_str()) else {
             let valid_themes = themes.presentation.theme_names().join(", ");
             let error_message = format!("invalid theme name, valid themes are: {valid_themes}");
             Cli::command().error(ErrorKind::InvalidValue, error_message).exit();
@@ -386,8 +412,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     } else if cli.current_theme {
         let Customizations { config, .. } =
             Customizations::load(cli.config_file.clone().map(PathBuf::from), &current_dir()?)?;
-        let theme_name =
-            cli.theme.as_ref().or(config.defaults.theme.as_ref()).map(|s| s.as_str()).unwrap_or(DEFAULT_THEME);
+        let theme_name = CoreComponents::theme_name(&config, &cli);
         println!("{theme_name}");
         return Ok(());
     } else if cli.list_comment_commands {
@@ -397,8 +422,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
-    // Disable this so we don't mess things up when generating PDFs
-    if cli.export_pdf {
+    // Disable this so we don't mess things up when exporting.
+    if cli.export_pdf || cli.export_html {
         TerminalEmulator::disable_capability_detection();
     }
 
@@ -440,6 +465,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             resources,
             third_party,
             code_executor,
+            printer,
             themes,
             builder_options,
             dimensions,

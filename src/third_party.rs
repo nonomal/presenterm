@@ -1,6 +1,6 @@
 use crate::{
     ImageRegistry,
-    config::{default_mermaid_scale, default_snippet_render_threads, default_typst_ppi},
+    config::{default_mermaid_cli, default_mermaid_scale, default_snippet_render_threads, default_typst_ppi},
     markdown::{
         elements::{Line, Percent, Text},
         text_style::{Color, TextStyle},
@@ -30,7 +30,10 @@ use std::{
 
 pub struct ThirdPartyConfigs {
     pub typst_ppi: String,
+    pub mermaid_cli: String,
     pub mermaid_scale: String,
+    pub mermaid_puppeteer_file: Option<String>,
+    pub mermaid_config_file: Option<String>,
     pub d2_scale: String,
     pub threads: usize,
 }
@@ -65,8 +68,11 @@ impl ThirdPartyRender {
 impl Default for ThirdPartyRender {
     fn default() -> Self {
         let config = ThirdPartyConfigs {
+            mermaid_cli: default_mermaid_cli(),
             typst_ppi: default_typst_ppi().to_string(),
             mermaid_scale: default_mermaid_scale().to_string(),
+            mermaid_puppeteer_file: None,
+            mermaid_config_file: None,
             d2_scale: "-1".to_string(),
             threads: default_snippet_render_threads(),
         };
@@ -197,19 +203,28 @@ impl Worker {
         let input_path = workdir.path().join("input.mmd");
         fs::write(&input_path, input)?;
 
-        ThirdPartyTools::mermaid(&[
+        let input_path = input_path.to_string_lossy();
+        let output_path_str = output_path.to_string_lossy();
+        let mut args = vec![
             "-i",
-            &input_path.to_string_lossy(),
+            &input_path,
             "-o",
-            &output_path.to_string_lossy(),
+            &output_path_str,
             "-s",
             &self.shared.config.mermaid_scale,
             "-t",
             &style.theme,
             "-b",
             &style.background,
-        ])
-        .run()?;
+        ];
+        if let Some(path) = &self.shared.config.mermaid_puppeteer_file {
+            args.extend(&["-p", path]);
+        }
+        if let Some(path) = &self.shared.config.mermaid_config_file {
+            args.extend(&["-c", path]);
+        }
+
+        ThirdPartyTools::mermaid(&self.shared.config.mermaid_cli, &args).run()?;
 
         self.load_image(snippet, &output_path)
     }

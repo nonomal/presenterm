@@ -31,6 +31,10 @@ pub struct PresentationTheme {
     #[serde(default)]
     pub(crate) execution_output: ExecutionOutputBlockStyle,
 
+    /// The style for the pty output of a piece of code.
+    #[serde(default)]
+    pub(crate) pty_output: PtyOutputBlockStyle,
+
     /// The style for inline code.
     #[serde(default)]
     pub(crate) inline_code: ModifierStyle,
@@ -40,7 +44,7 @@ pub struct PresentationTheme {
     pub(crate) bold: ModifierStyle,
 
     /// The style for italics.
-    #[serde(default)]
+    #[serde(default, alias = "italic")]
     pub(crate) italics: ModifierStyle,
 
     /// The style for a table.
@@ -58,6 +62,10 @@ pub struct PresentationTheme {
     /// The default style.
     #[serde(rename = "default", default)]
     pub(crate) default_style: DefaultStyle,
+
+    /// The style for column layouts.
+    #[serde(default)]
+    pub(crate) column_layout: ColumnLayoutStyle,
 
     //// The style of all headings.
     #[serde(default)]
@@ -138,7 +146,7 @@ pub(crate) struct SlideTitleStyle {
     pub(crate) bold: Option<bool>,
 
     /// Whether to use italics font for slide titles.
-    #[serde(default)]
+    #[serde(default, alias = "italic")]
     pub(crate) italics: Option<bool>,
 
     /// Whether to use underlined font for slide titles.
@@ -208,7 +216,7 @@ pub(crate) struct HeadingStyle {
     pub(crate) underlined: Option<bool>,
 
     /// Whether the heading uses italics.
-    #[serde(default)]
+    #[serde(default, alias = "italic")]
     pub(crate) italics: Option<bool>,
 }
 
@@ -346,6 +354,18 @@ pub(crate) struct DefaultStyle {
     /// The colors to be used.
     #[serde(default)]
     pub(crate) colors: RawColors,
+
+    /// The alignment for all elements.
+    #[serde(flatten, default)]
+    pub(crate) alignment: Option<Alignment>,
+}
+
+/// The column layout style.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub(crate) struct ColumnLayoutStyle {
+    /// The margin in between two columns.
+    #[serde(default, with = "serde_yaml::with::singleton_map")]
+    pub(crate) margin: Option<Margin>,
 }
 
 /// A simple style.
@@ -688,6 +708,40 @@ pub(crate) struct ExecutionOutputBlockStyle {
     pub(crate) padding: PaddingRect,
 }
 
+/// The style for the output of a code execution block running in pty mode.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub(crate) struct PtyOutputBlockStyle {
+    /// The colors to be used for the output pane.
+    #[serde(default)]
+    pub(crate) colors: RawColors,
+
+    /// The style for the standby state.
+    #[serde(default)]
+    pub(crate) standby: Option<PtyStandbyStyle>,
+
+    #[serde(default)]
+    pub(crate) cursor: PtyCursorStyle,
+}
+
+/// The style for a PTY's cursor.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub(crate) struct PtyCursorStyle {
+    /// The symbol to use on the cursor.
+    #[serde(default)]
+    pub(crate) symbol: Option<char>,
+
+    /// The colors used when the cursor is on top of non empty cells.
+    #[serde(default)]
+    pub(crate) highlight_colors: RawColors,
+}
+
+/// The style for the standby state.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) enum PtyStandbyStyle {
+    /// Show a play icon.
+    LargePlay,
+}
+
 /// The style for the status of a code execution block.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct ExecutionStatusBlockStyle {
@@ -758,30 +812,6 @@ impl Default for Margin {
     fn default() -> Self {
         Self::Fixed(0)
     }
-}
-
-/// An element type.
-#[derive(Clone, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ElementType {
-    SlideTitle,
-    Heading1,
-    Heading2,
-    Heading3,
-    Heading4,
-    Heading5,
-    Heading6,
-    Paragraph,
-    List,
-    Code,
-    PresentationTitle,
-    PresentationSubTitle,
-    PresentationEvent,
-    PresentationLocation,
-    PresentationDate,
-    PresentationAuthor,
-    Table,
-    BlockQuote,
 }
 
 /// Where to position the author's name in the intro slide.

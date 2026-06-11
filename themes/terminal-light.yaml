@@ -6,6 +6,10 @@ default:
     foreground: null
     background: null
 
+column_layout:
+  margin:
+    fixed: 4
+
 slide_title:
   alignment: center
   padding_bottom: 1
@@ -41,6 +45,14 @@ execution_output:
   padding:
     horizontal: 2
     vertical: 1
+
+pty_output:
+  colors:
+    foreground: black
+  cursor:
+    highlight_colors:
+      foreground: white
+      background: black
 
 inline_code:
   colors:

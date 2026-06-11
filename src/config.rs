@@ -74,12 +74,35 @@ pub enum ConfigLoadError {
     Invalid(#[from] serde_yaml::Error),
 }
 
+#[derive(Clone, Debug, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+#[cfg_attr(feature = "json-schema", schemars(with = "ThemeConfigSchema"))]
+pub enum ThemeConfig {
+    #[default]
+    None,
+    /// Theme of the presentation.
+    Some(String),
+    /// Automatic dark/light theme switch based on the terminal background luminance.
+    Dynamic {
+        /// Dark theme of the presentation.
+        dark: String,
+        /// Light theme of the presentation.
+        light: String,
+        /// Light/Dark detection timeout in ms.
+        #[cfg_attr(feature = "json-schema", validate(range(min = 1)))]
+        timeout: Option<u64>,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DefaultsConfig {
     /// The theme to use by default in every presentation unless overridden.
-    pub theme: Option<String>,
+    #[serde(default)]
+    pub theme: ThemeConfig,
 
     /// Override the terminal font size when in windows or when using sixel.
     #[serde(default = "default_terminal_font_size")]
@@ -114,7 +137,11 @@ pub struct DefaultsConfig {
 
     /// The configuration for lists when incremental lists are enabled.
     #[serde(default)]
-    pub incremental_lists: IncrementalListsConfig,
+    pub incremental_lists: IncrementalElementConfig,
+
+    /// The configuration for tables when incremental tables are enabled.
+    #[serde(default)]
+    pub incremental_tables: IncrementalElementConfig,
 }
 
 impl Default for DefaultsConfig {
@@ -129,20 +156,21 @@ impl Default for DefaultsConfig {
             max_rows: default_u16_max(),
             max_rows_alignment: Default::default(),
             incremental_lists: Default::default(),
+            incremental_tables: Default::default(),
         }
     }
 }
 
-/// The configuration for lists when incremental lists are enabled.
+/// The configuration for incrementally shown elements.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct IncrementalListsConfig {
-    /// Whether to pause before a list begins.
+pub struct IncrementalElementConfig {
+    /// Whether to pause before.
     #[serde(default)]
     pub pause_before: Option<bool>,
 
-    /// Whether to pause after a list ends.
+    /// Whether to pause after.
     #[serde(default)]
     pub pause_after: Option<bool>,
 }
@@ -209,6 +237,9 @@ pub struct OptionsConfig {
 
     /// Show all lists incrementally, by implicitly adding pauses in between elements.
     pub incremental_lists: Option<bool>,
+
+    /// Show all tables incrementally, by implicitly adding pauses in between rows.
+    pub incremental_tables: Option<bool>,
 
     /// The number of newlines in between list items.
     pub list_item_newlines: Option<NonZeroU8>,
@@ -312,19 +343,38 @@ pub(crate) fn default_typst_ppi() -> u32 {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct MermaidConfig {
+    /// The application to use to generate diagrams.
+    #[serde(default = "default_mermaid_cli")]
+    pub cli: String,
+
     /// The scaling parameter to be used in the mermaid CLI.
     #[serde(default = "default_mermaid_scale")]
     pub scale: u32,
+
+    /// A path to a puppeteer JSON configuration file to be used by the `mmdc` tool.
+    pub puppeteer_config_path: Option<String>,
+
+    /// A path to a mermaid JSON configuration file to be used by the `mmdc` tool.
+    pub config_path: Option<String>,
 }
 
 impl Default for MermaidConfig {
     fn default() -> Self {
-        Self { scale: default_mermaid_scale() }
+        Self {
+            cli: default_mermaid_cli(),
+            scale: default_mermaid_scale(),
+            puppeteer_config_path: None,
+            config_path: None,
+        }
     }
 }
 
 pub(crate) fn default_mermaid_scale() -> u32 {
     2
+}
+
+pub(crate) fn default_mermaid_cli() -> String {
+    if cfg!(windows) { "mmdc.cmd" } else { "mmdc" }.to_string()
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -392,21 +442,16 @@ pub enum ImageProtocol {
     /// different hosts and therefore can only communicate via terminal escape codes.
     KittyRemote,
 
-    /// Use the sixel protocol. Note that this requires compiling presenterm using the --features
-    /// sixel flag.
+    /// Use the sixel protocol.
     Sixel,
 
     /// The default image protocol to use when no other is specified.
     AsciiBlocks,
 }
 
-pub struct SixelUnsupported;
-
-impl TryFrom<&ImageProtocol> for GraphicsMode {
-    type Error = SixelUnsupported;
-
-    fn try_from(protocol: &ImageProtocol) -> Result<Self, Self::Error> {
-        let mode = match protocol {
+impl From<&ImageProtocol> for GraphicsMode {
+    fn from(protocol: &ImageProtocol) -> Self {
+        match protocol {
             ImageProtocol::Auto => {
                 let emulator = TerminalEmulator::detect();
                 emulator.preferred_protocol()
@@ -416,12 +461,8 @@ impl TryFrom<&ImageProtocol> for GraphicsMode {
             ImageProtocol::KittyLocal => GraphicsMode::Kitty { mode: KittyMode::Local },
             ImageProtocol::KittyRemote => GraphicsMode::Kitty { mode: KittyMode::Remote },
             ImageProtocol::AsciiBlocks => GraphicsMode::AsciiBlocks,
-            #[cfg(feature = "sixel")]
             ImageProtocol::Sixel => GraphicsMode::Sixel,
-            #[cfg(not(feature = "sixel"))]
-            ImageProtocol::Sixel => return Err(SixelUnsupported),
-        };
-        Ok(mode)
+        }
     }
 }
 
